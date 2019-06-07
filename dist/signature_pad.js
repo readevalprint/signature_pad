@@ -238,6 +238,9 @@ SignaturePad.prototype.toDataURL = function (type) {
 };
 
 SignaturePad.prototype.on = function () {
+  this._canvas.style.touchAction = "none";
+  this._canvas.style.msTouchAction = "none";
+
   if (window.PointerEvent) {
     this._handlePointerEvents();
   } else {
