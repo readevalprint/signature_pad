@@ -1,8 +1,8 @@
 /*!
- * Signature Pad v2.3.2
- * https://github.com/szimek/signature_pad
+ * Signature Pad v2.3.3
+ * https://github.com/formunauts/signature_pad
  *
- * Copyright 2019 Szymon Nowak
+ * Copyright 2019 undefined
  * Released under the MIT license
  *
  * The main idea and some parts of the code (e.g. drawing variable width Bézier curve) are taken from:
@@ -238,6 +238,9 @@ SignaturePad.prototype.toDataURL = function (type) {
 };
 
 SignaturePad.prototype.on = function () {
+  this._canvas.style.touchAction = "none";
+  this._canvas.style.msTouchAction = "none";
+
   if (window.PointerEvent) {
     this._handlePointerEvents();
   } else {

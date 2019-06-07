@@ -1,13 +1,9 @@
 {
-  "name": "signature_pad",
+  "name": "@formunauts/signature_pad",
   "description": "Library for drawing smooth signatures.",
-  "version": "2.3.2",
-  "homepage": "https://github.com/szimek/signature_pad",
-  "author": {
-    "name": "Szymon Nowak",
-    "email": "szimek@gmail.com",
-    "url": "https://github.com/szimek"
-  },
+  "version": "2.3.3",
+  "homepage": "https://github.com/formunauts/signature_pad",
+  "author": "Szymon Nowak <szimek@gmail.com> (https://github.com/szimek)",
   "license": "MIT",
   "main": "dist/signature_pad.js",
   "module": "dist/signature_pad.mjs",
@@ -18,7 +14,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/szimek/signature_pad.git"
+    "url": "git+https://github.com/formunauts/signature_pad.git"
   },
   "files": [
     "src",
@@ -37,5 +33,13 @@
     "rollup-plugin-babel": "^2.7.1",
     "rollup-plugin-eslint": "^3.0.0",
     "rollup-plugin-uglify": "^1.0.1"
-  }
+  },
+  "bugs": {
+    "url": "https://github.com/formunauts/signature_pad/issues"
+  },
+  "directories": {
+    "doc": "docs",
+    "example": "example"
+  },
+  "dependencies": {}
 }
