@@ -35,6 +35,7 @@ export interface IOptions {
 
 export interface IPointGroup {
   color: string;
+  force: number[];
   points: IBasicPoint[];
 }
 
@@ -151,6 +152,13 @@ export default class SignaturePad {
     }
   }
 
+  public isTouch(): boolean {
+    if ('ontouchstart' in window) {
+      return true;
+    }
+    return false;
+  }
+
   public on(): void {
     // Disable panning/zooming when touching canvas element
     this.canvas.style.touchAction = 'none';
@@ -161,7 +169,7 @@ export default class SignaturePad {
     } else {
       this._handleMouseEvents();
 
-      if ('ontouchstart' in window) {
+      if (this.isTouch()) {
         this._handleTouchEvents();
       }
     }
@@ -258,7 +266,8 @@ export default class SignaturePad {
   private _strokeBegin(event: MouseEvent | Touch): void {
     const newPointGroup = {
       color: this.penColor,
-      points: [],
+      force: [],
+      points: []
     };
 
     if (typeof this.onBegin === 'function') {
@@ -277,6 +286,7 @@ export default class SignaturePad {
     const point = this._createPoint(x, y);
     const lastPointGroup = this._data[this._data.length - 1];
     const lastPoints = lastPointGroup ? lastPointGroup.points : [];
+    const lastForce = lastPointGroup ? lastPointGroup.force : [];
     const lastPoint =
       lastPoints.length > 0 && lastPoints[lastPoints.length - 1];
     const isLastPointTooClose = lastPoint
@@ -299,6 +309,12 @@ export default class SignaturePad {
         x: point.x,
         y: point.y,
       });
+
+      if (this.isTouch()) {
+        lastForce.push((event as any).force);
+      } else {
+        lastForce.push(-1);
+      }
     }
   }
 
