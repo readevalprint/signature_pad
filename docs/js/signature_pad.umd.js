@@ -1,6 +1,6 @@
 /*!
  * Signature Pad v3.0.0-beta.3 | https://github.com/szimek/signature_pad
- * (c) 2018 Szymon Nowak | Released under the MIT license
+ * (c) 2019 Szymon Nowak | Released under the MIT license
  */
 
 (function (global, factory) {
@@ -160,7 +160,7 @@
           };
           this._handleTouchStart = function (event) {
               event.preventDefault();
-              if (event.targetTouches.length === 1) {
+              if (event.targetTouches.length > 0) {
                   var touch = event.changedTouches[0];
                   _this._strokeBegin(touch);
               }
@@ -238,11 +238,11 @@
       };
       SignaturePad.prototype.toDataURL = function (type, encoderOptions) {
           if (type === void 0) { type = 'image/png'; }
-          switch (type) {
-              case 'image/svg+xml':
-                  return this._toSVG();
-              default:
-                  return this.canvas.toDataURL(type, encoderOptions);
+          if (type === 'image/svg+xml') {
+              return this._toSVG();
+          }
+          else {
+              return this.canvas.toDataURL(type, encoderOptions);
           }
       };
       SignaturePad.prototype.on = function () {
@@ -306,12 +306,12 @@
           var y = event.clientY;
           var point = this._createPoint(x, y);
           var lastPointGroup = this._data[this._data.length - 1];
-          var lastPoints = lastPointGroup.points;
+          var lastPoints = lastPointGroup ? lastPointGroup.points : [];
           var lastPoint = lastPoints.length > 0 && lastPoints[lastPoints.length - 1];
           var isLastPointTooClose = lastPoint
               ? point.distanceTo(lastPoint) <= this.minDistance
               : false;
-          var color = lastPointGroup.color;
+          var color = lastPointGroup ? lastPointGroup.color : this.penColor;
           if (!lastPoint || !(lastPoint && isLastPointTooClose)) {
               var curve = this._addPoint(point);
               if (!lastPoint) {
@@ -417,7 +417,7 @@
               y += 3 * uu * t * curve.control1.y;
               y += 3 * u * tt * curve.control2.y;
               y += ttt * curve.endPoint.y;
-              var width = curve.startWidth + ttt * widthDelta;
+              var width = Math.min(curve.startWidth + ttt * widthDelta, this.maxWidth);
               this._drawCurveSegment(x, y, width);
           }
           ctx.closePath();
@@ -503,7 +503,7 @@
           var header = '<svg' +
               ' xmlns="http://www.w3.org/2000/svg"' +
               ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
-              (" viewBox=\"" + minX + " " + minY + " " + maxX + " " + maxY + "\"") +
+              (" viewBox=\"" + minX + " " + minY + " " + this.canvas.width + " " + this.canvas.height + "\"") +
               (" width=\"" + maxX + "\"") +
               (" height=\"" + maxY + "\"") +
               '>';

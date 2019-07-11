@@ -70,7 +70,7 @@ export default class SignaturePad {
     this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
     this.minWidth = options.minWidth || 0.5;
     this.maxWidth = options.maxWidth || 2.5;
-    this.throttle = ('throttle' in options ? options.throttle : 16) as number; // in milisecondss
+    this.throttle = ('throttle' in options ? options.throttle : 16) as number; // in milliseconds
     this.minDistance = ('minDistance' in options
       ? options.minDistance
       : 5) as number; // in pixels
@@ -144,11 +144,10 @@ export default class SignaturePad {
   }
 
   public toDataURL(type = 'image/png', encoderOptions?: number) {
-    switch (type) {
-      case 'image/svg+xml':
-        return this._toSVG();
-      default:
-        return this.canvas.toDataURL(type, encoderOptions);
+    if (type === 'image/svg+xml') {
+      return this._toSVG();
+    } else {
+      return this.canvas.toDataURL(type, encoderOptions);
     }
   }
 
