@@ -238,18 +238,16 @@ export default class SignaturePad {
     for (const line of this._data) {
       for (const point of line.points) {
         pointsdata.push({
-          'sig:SamplePoint': {
-            'sig:TimeChannel': point.time * this._timeScale,
-            'sig:PenTipCoord': {
-              'cmn:X': this.pixelToMilimeter(point.x),
-              'cmn:Y': this.pixelToMilimeter(point.y),
-              'cmn:Z': 0
-            },
-            'sig:FChannel': point.pressure * this._pressureScale,
-            'sig:PenOrient': {
-              'sig:TiltAlongX': point.tiltX * this._angleScale,
-              'sig:TiltAlongY': point.tiltY * this._angleScale
-            }
+          'sig:TimeChannel': point.time * this._timeScale / 1000,
+          'sig:PenTipCoord': {
+            'cmn:X': this.pixelToMilimeter(point.x),
+            'cmn:Y': this.pixelToMilimeter(point.y),
+            // 'cmn:Z': 0
+          },
+          'sig:FChannel': point.pressure * this._pressureScale,
+          'sig:PenOrient': {
+            'sig:TiltAlongX': point.tiltX * this._angleScale,
+            'sig:TiltAlongY': point.tiltY * this._angleScale
           }
         })
       }
@@ -287,7 +285,9 @@ export default class SignaturePad {
                 'sig:MaxChannelValue': this._pressureScale
               }
             },
-            'sig:SamplePointList': pointsdata
+            'sig:SamplePointList': {
+              'sig:SamplePoint': pointsdata
+            }
           }
         }
       }
