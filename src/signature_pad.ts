@@ -247,6 +247,8 @@ export default class SignaturePad {
           'sig:PenOrient': {
             'sig:TiltAlongX': point.tiltX * this._angleScale,
             'sig:TiltAlongY': point.tiltY * this._angleScale,
+            'sig:PenAzimuth': point.altitude * this._angleScale,
+            'sig:PenElevation': point.azimuth * this._angleScale,
             'sig:PenRotation': point.rotation * this._angleScale
           }
         };
@@ -254,6 +256,10 @@ export default class SignaturePad {
           if (this._whichEvent !== 1) {
             delete pointdata['sig:PenOrient']['sig:TiltAlongX'];
             delete pointdata['sig:PenOrient']['sig:TiltAlongY'];
+          }
+          if (this._whichEvent !== 3) {
+            delete pointdata['sig:PenOrient']['sig:PenAzimuth'];
+            delete pointdata['sig:PenOrient']['sig:PenElevation'];
           }
         } else {
           delete pointdata['sig:FChannel'];
@@ -374,13 +380,13 @@ export default class SignaturePad {
     }
   };
 
-  private _handleTouchStart = (event: TouchEvent): void => {
+  private _handleTouchStart = (event: any): void => {
     // Prevent scrolling.
     event.preventDefault();
 
     if (event.targetTouches.length === 1) {
       const touch = event.changedTouches[0];
-      this._pointerType = 'touch';
+      this._pointerType = touch.touchType;
       this._strokeBegin(touch);
     }
   };
@@ -451,27 +457,31 @@ export default class SignaturePad {
         this._time = d.getTime() - this._time1;
       }
 
-      let p = -1;
-      let r = -1;
-      if (this.isTouch()) {
-        if (this._whichEvent === 1) {
-          p = event.pressure;
-          r = event.twist;
-        } else {
-          p = event.force;
-          r = event.rotationAngle;
-        }
-      }
-
-      lastPoints.push({
-        pressure: p,
-        rotation: r,
+      const pt = {
+        altitude: -1,
+        azimuth: -1,
+        pressure: -1,
+        rotation: -1,
         time: point.time - this._time1,
         x: point.x,
         y: point.y,
         tiltX: this._whichEvent === 1 ? event.tiltX : -1,
         tiltY: this._whichEvent === 1 ? event.tiltY : -1
-      });
+      }
+      if (this.isTouch()) {
+        if (this._whichEvent === 1) {
+          pt.pressure = event.pressure;
+          pt.rotation = event.twist;
+          pt.tiltX = event.tiltX;
+          pt.tiltY = event.tiltY;
+        } else {
+          pt.pressure = event.force;
+          pt.rotation = event.rotationAngle;
+          pt.altitude = event.altitudeAngle;
+          pt.azimuth = event.azimuthAngle;
+        }
+      }
+      lastPoints.push(pt);
     }
   }
 
