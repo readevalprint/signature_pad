@@ -5,6 +5,7 @@ var undoButton = wrapper.querySelector("[data-action=undo]");
 var savePNGButton = wrapper.querySelector("[data-action=save-png]");
 var saveJPGButton = wrapper.querySelector("[data-action=save-jpg]");
 var saveSVGButton = wrapper.querySelector("[data-action=save-svg]");
+var printDataButton = wrapper.querySelector("[data-action=print-data]");
 var canvas = wrapper.querySelector("canvas");
 var signaturePad = new SignaturePad(canvas, {
   // It's Necessary to use an opaque color when saving image as JPEG;
@@ -95,6 +96,54 @@ changeColorButton.addEventListener("click", function (event) {
   var color = "rgb(" + r + "," + g + "," + b +")";
 
   signaturePad.penColor = color;
+});
+
+function OBJtoXML(obj, tabDepth) {
+  var xml = '';
+  for (var prop in obj) {
+    var tabstr = ""
+    for (var i = 0; i < tabDepth; i ++) {
+      tabstr += "\t";
+    }
+    if (obj[prop] instanceof Array) {
+      for (var array in obj[prop]) {
+        xml += tabstr;
+        xml += "<" + prop + ">\n";
+        xml += OBJtoXML(new Object(obj[prop][array]), tabDepth + 1);
+        xml += tabstr;
+        xml += "</" + prop + ">\n";
+      }
+    } else if (typeof obj[prop] == "object") {
+      xml += tabstr;
+      xml += "<" + prop + ">";
+      xml += '\n'
+      xml += OBJtoXML(new Object(obj[prop]), tabDepth + 1);
+      xml += tabstr;
+    } else {
+      xml += tabstr;
+      xml += "<" + prop + ">";
+      xml += obj[prop];
+    }
+    xml += obj[prop] instanceof Array ? '' : "</" + prop + ">\n";
+  }
+  return xml
+}
+
+function pixelToMilimeter(p) {
+  var div = document.createElement( "div");
+  div.style.height = "1000mm";
+  div.style.width = "1000mm";
+  div.style.top = "-100%";
+  div.style.left = "-100%";
+  div.style.position = "absolute";
+  document.body.appendChild(div);
+  var result =  div.offsetHeight;
+  document.body.removeChild( div );
+  return p / result * 1000;
+}
+
+printDataButton.addEventListener("click", function (event) {
+  console.log(OBJtoXML(signaturePad.toData(), 0));
 });
 
 savePNGButton.addEventListener("click", function (event) {
