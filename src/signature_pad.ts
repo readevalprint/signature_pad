@@ -328,11 +328,12 @@ export default class SignaturePad {
       if (this._whichEvent === 1) {
         inclusion += 0b0000000000010000; // tiltX
         inclusion += 0b0000000000001000; // tiltY
+      } else {
+        inclusion += 0b0000000000000100; // azimuth
+        inclusion += 0b0000000000000010; // elevation
       }
       inclusion += 0b0000000000000001; // rotation
     }
-    // inclusion += 0b0000000000000100; // azimuth
-    // inclusion += 0b0000000000000010; // elevation
     return inclusion;
   }
 
