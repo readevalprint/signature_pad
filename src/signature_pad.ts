@@ -61,7 +61,6 @@ export default class SignaturePad {
   private _time1: number; // Time of start
   private _time: number; // Time
   private _pointerType: string; // mouse, pen, touch
-  private _datetime: string; // Date and time when sign started
   private _angleScale: number = 1000; // Angle scaling value
   private _timeScale: number = 1000; // Time scaling value
   private _pressureScale: number = 1000; // Time scaling value
@@ -347,8 +346,7 @@ export default class SignaturePad {
   private _handleMouseDown = (event: MouseEvent): void => {
     if (event.which === 1) {
       this._mouseButtonDown = true;
-      // this._pointerType = event.pointerType;
-      // this._pointerId = event.pointerId;
+      this._pointerType = 'mouse';
       this._strokeBegin(event);
     }
   };
@@ -372,6 +370,7 @@ export default class SignaturePad {
 
     if (event.targetTouches.length === 1) {
       const touch = event.changedTouches[0];
+      this._pointerType = 'touch';
       this._strokeBegin(touch);
     }
   };
