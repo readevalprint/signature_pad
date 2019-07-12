@@ -202,6 +202,19 @@ export default class SignaturePad {
     this._data = pointGroups;
   }
 
+  public pixelToMilimeter(p: number): number {
+    const div = document.createElement( "div");
+    div.style.height = "1000mm";
+    div.style.width = "1000mm";
+    div.style.top = "-100%";
+    div.style.left = "-100%";
+    div.style.position = "absolute";
+    document.body.appendChild(div);
+    const result =  div.offsetHeight;
+    document.body.removeChild( div );
+    return Math.floor(p / result * 1000);
+  }
+
   public toData(): object {
     const pointsdata = [];
     for (const line of this._data) {
@@ -210,8 +223,8 @@ export default class SignaturePad {
           'sig:SamplePoint': {
             'sig:TimeChannel': point.time * this._timeScale,
             'sig:PenTipCoord': {
-              'cmn:X': point.x,
-              'cmn:Y': point.y,
+              'cmn:X': this.pixelToMilimeter(point.x),
+              'cmn:Y': this.pixelToMilimeter(point.y),
               'cmn:Z': 0
             },
             'sig:FChannel': point.pressure * this._pressureScale,
