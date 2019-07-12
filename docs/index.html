@@ -48,6 +48,7 @@
 
         </div>
         <div>
+          <button type="button" class="button" data-action="show-last-data">Show the last 3 points</button>
           <button type="button" class="button" data-action="print-data">Print Data</button>
           <button type="button" class="button save" data-action="save-png">Save as PNG</button>
           <button type="button" class="button save" data-action="save-jpg">Save as JPG</button>
@@ -55,6 +56,9 @@
         </div>
       </div>
     </div>
+  </div>
+  <div style='display: block'>
+    <textarea id="last-data" cols="100" rows="50"></textarea>
   </div>
 
   <script src="js/signature_pad.umd.js"></script>

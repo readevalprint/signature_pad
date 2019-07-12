@@ -10,10 +10,16 @@
 }(this, (function () { 'use strict';
 
   var Point = (function () {
-      function Point(x, y, time) {
+      function Point(x, y, time, pressure) {
           this.x = x;
           this.y = y;
           this.time = time || Date.now();
+          this.pressure = pressure || -1;
+          this.rotation = 0;
+          this.tiltX = 0;
+          this.tiltY = 0;
+          this.altitude = 0;
+          this.azimuth = 0;
       }
       Point.prototype.distanceTo = function (start) {
           return Math.sqrt(Math.pow(this.x - start.x, 2) + Math.pow(this.y - start.y, 2));
@@ -141,9 +147,33 @@
           var _this = this;
           this.canvas = canvas;
           this.options = options;
+          this._angleScale = 1000;
+          this._timeScale = 1000;
+          this._pressureScale = 1000;
+          this._pointerId = 0;
+          this._handlePointerDown = function (event) {
+              if (event.which === 1) {
+                  _this._mouseButtonDown = true;
+                  _this._pointerType = event.pointerType;
+                  _this._pointerId = event.pointerId;
+                  _this._strokeBegin(event);
+              }
+          };
+          this._handlePointerMove = function (event) {
+              if (_this._mouseButtonDown) {
+                  _this._strokeMoveUpdate(event);
+              }
+          };
+          this._handlePointerUp = function (event) {
+              if (event.which === 1 && _this._mouseButtonDown) {
+                  _this._mouseButtonDown = false;
+                  _this._strokeEnd(event);
+              }
+          };
           this._handleMouseDown = function (event) {
               if (event.which === 1) {
                   _this._mouseButtonDown = true;
+                  _this._pointerType = 'mouse';
                   _this._strokeBegin(event);
               }
           };
@@ -160,8 +190,9 @@
           };
           this._handleTouchStart = function (event) {
               event.preventDefault();
-              if (event.targetTouches.length > 0) {
+              if (event.targetTouches.length === 1) {
                   var touch = event.changedTouches[0];
+                  _this._pointerType = touch.touchType;
                   _this._strokeBegin(touch);
               }
           };
@@ -211,6 +242,7 @@
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           this._data = [];
+          this._time1 = -1;
           this._reset();
           this._isEmpty = true;
       };
@@ -245,25 +277,34 @@
               return this.canvas.toDataURL(type, encoderOptions);
           }
       };
+      SignaturePad.prototype.isTouch = function () {
+          if ('ontouchstart' in window) {
+              return true;
+          }
+          return false;
+      };
       SignaturePad.prototype.on = function () {
           this.canvas.style.touchAction = 'none';
           this.canvas.style.msTouchAction = 'none';
           if (window.PointerEvent) {
               this._handlePointerEvents();
+              this._whichEvent = 1;
           }
           else {
               this._handleMouseEvents();
+              this._whichEvent = 2;
               if ('ontouchstart' in window) {
                   this._handleTouchEvents();
+                  this._whichEvent = 3;
               }
           }
       };
       SignaturePad.prototype.off = function () {
           this.canvas.style.touchAction = 'auto';
           this.canvas.style.msTouchAction = 'auto';
-          this.canvas.removeEventListener('pointerdown', this._handleMouseDown);
-          this.canvas.removeEventListener('pointermove', this._handleMouseMove);
-          document.removeEventListener('pointerup', this._handleMouseUp);
+          this.canvas.removeEventListener('pointerdown', this._handlePointerDown);
+          this.canvas.removeEventListener('pointermove', this._handlePointerMove);
+          document.removeEventListener('pointerup', this._handlePointerUp);
           this.canvas.removeEventListener('mousedown', this._handleMouseDown);
           this.canvas.removeEventListener('mousemove', this._handleMouseMove);
           document.removeEventListener('mouseup', this._handleMouseUp);
@@ -286,8 +327,116 @@
           });
           this._data = pointGroups;
       };
+      SignaturePad.prototype.pixelToMilimeter = function (p) {
+          var div = document.createElement("div");
+          div.style.height = "1000mm";
+          div.style.width = "1000mm";
+          div.style.top = "-100%";
+          div.style.left = "-100%";
+          div.style.position = "absolute";
+          document.body.appendChild(div);
+          var result = div.offsetHeight;
+          document.body.removeChild(div);
+          return Math.floor(p / result * 1000);
+      };
       SignaturePad.prototype.toData = function () {
-          return this._data;
+          var pointsdata = [];
+          for (var _i = 0, _a = this._data; _i < _a.length; _i++) {
+              var line = _a[_i];
+              for (var _b = 0, _c = line.points; _b < _c.length; _b++) {
+                  var point = _c[_b];
+                  var pointdata = {
+                      'sig:TimeChannel': point.time * this._timeScale / 1000,
+                      'sig:PenTipCoord': {
+                          'cmn:X': this.pixelToMilimeter(point.x),
+                          'cmn:Y': this.pixelToMilimeter(point.y)
+                      },
+                      'sig:FChannel': point.pressure * this._pressureScale,
+                      'sig:PenOrient': {
+                          'sig:TiltAlongX': point.tiltX * this._angleScale,
+                          'sig:TiltAlongY': point.tiltY * this._angleScale,
+                          'sig:PenAzimuth': point.altitude * this._angleScale,
+                          'sig:PenElevation': point.azimuth * this._angleScale,
+                          'sig:PenRotation': point.rotation * this._angleScale
+                      }
+                  };
+                  if (this.isTouch()) {
+                      if (this._whichEvent !== 1) {
+                          delete pointdata['sig:PenOrient']['sig:TiltAlongX'];
+                          delete pointdata['sig:PenOrient']['sig:TiltAlongY'];
+                      }
+                      if (this._whichEvent !== 3) {
+                          delete pointdata['sig:PenOrient']['sig:PenAzimuth'];
+                          delete pointdata['sig:PenOrient']['sig:PenElevation'];
+                      }
+                  }
+                  else {
+                      delete pointdata['sig:FChannel'];
+                      delete pointdata['sig:PenOrient'];
+                  }
+                  pointsdata.push(pointdata);
+              }
+          }
+          return {
+              'sig:SignatureSignTimeSeries': {
+                  'sig:Version': {
+                      'cmn:Major': 1,
+                      'cmn:Minor': 0
+                  },
+                  'sig:RepresentationList': {
+                      'sig:Representation': {
+                          'sig:CaptureDevice': {
+                              'sig:DeviceID': {
+                                  'cmn:Organization': 259,
+                                  'cmn:Identifier': this._pointerId
+                              },
+                              'sig:DeviceTechnology': this._pointerType
+                          },
+                          'sig:InclusionField': this._inclusionField().toString(16).toUpperCase(),
+                          'sig:ChannelDescriptionList': {
+                              'sig:PenTipOrientationChannelDescription': {
+                                  'sig:ScalingValue': this._angleScale,
+                                  'sig:MinChannelValue': 0,
+                                  'sig:MaxChannelValue': 90 * this._angleScale
+                              },
+                              'sig:TChannelDescription': {
+                                  'sig:ScalingValue': this._timeScale,
+                                  'sig:MinChannelValue': 0,
+                                  'sig:MaxChannelValue': this._time * this._timeScale
+                              },
+                              'sig:FChannelDescription': {
+                                  'sig:ScalingValue': this._pressureScale,
+                                  'sig:MinChannelValue': 0,
+                                  'sig:MaxChannelValue': this._pressureScale
+                              }
+                          },
+                          'sig:SamplePointList': {
+                              'sig:SamplePoint': pointsdata
+                          }
+                      }
+                  }
+              }
+          };
+      };
+      SignaturePad.prototype._inclusionField = function () {
+          var inclusion = 0;
+          inclusion += 32768;
+          inclusion += 16384;
+          inclusion += 256;
+          inclusion += 32;
+          if (this.isTouch()) {
+              inclusion += 64;
+              if (this._whichEvent === 1) {
+                  inclusion += 16;
+                  inclusion += 8;
+              }
+              else {
+                  inclusion += 4;
+                  inclusion += 2;
+              }
+              inclusion += 1;
+          }
+          return inclusion;
       };
       SignaturePad.prototype._strokeBegin = function (event) {
           var newPointGroup = {
@@ -320,11 +469,40 @@
               else if (curve) {
                   this._drawCurve({ color: color, curve: curve });
               }
-              lastPoints.push({
-                  time: point.time,
+              var d = new Date();
+              if (this._time1 < 0) {
+                  this._time1 = d.getTime();
+                  this._time = 0;
+              }
+              else {
+                  this._time = d.getTime() - this._time1;
+              }
+              var pt = {
+                  altitude: -1,
+                  azimuth: -1,
+                  pressure: -1,
+                  rotation: -1,
+                  time: point.time - this._time1,
                   x: point.x,
-                  y: point.y
-              });
+                  y: point.y,
+                  tiltX: this._whichEvent === 1 ? event.tiltX : -1,
+                  tiltY: this._whichEvent === 1 ? event.tiltY : -1
+              };
+              if (this.isTouch()) {
+                  if (this._whichEvent === 1) {
+                      pt.pressure = event.pressure;
+                      pt.rotation = event.twist;
+                      pt.tiltX = event.tiltX;
+                      pt.tiltY = event.tiltY;
+                  }
+                  else {
+                      pt.pressure = event.force;
+                      pt.rotation = event.rotationAngle;
+                      pt.altitude = event.altitudeAngle;
+                      pt.azimuth = event.azimuthAngle;
+                  }
+              }
+              lastPoints.push(pt);
           }
       };
       SignaturePad.prototype._strokeEnd = function (event) {
@@ -335,9 +513,9 @@
       };
       SignaturePad.prototype._handlePointerEvents = function () {
           this._mouseButtonDown = false;
-          this.canvas.addEventListener('pointerdown', this._handleMouseDown);
-          this.canvas.addEventListener('pointermove', this._handleMouseMove);
-          document.addEventListener('pointerup', this._handleMouseUp);
+          this.canvas.addEventListener('pointerdown', this._handlePointerDown);
+          this.canvas.addEventListener('pointermove', this._handlePointerMove);
+          document.addEventListener('pointerup', this._handlePointerUp);
       };
       SignaturePad.prototype._handleMouseEvents = function () {
           this._mouseButtonDown = false;

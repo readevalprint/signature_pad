@@ -6,6 +6,7 @@ var savePNGButton = wrapper.querySelector("[data-action=save-png]");
 var saveJPGButton = wrapper.querySelector("[data-action=save-jpg]");
 var saveSVGButton = wrapper.querySelector("[data-action=save-svg]");
 var printDataButton = wrapper.querySelector("[data-action=print-data]");
+var showLastDataButton = wrapper.querySelector("[data-action=show-last-data]");
 var canvas = wrapper.querySelector("canvas");
 var signaturePad = new SignaturePad(canvas, {
   // It's Necessary to use an opaque color when saving image as JPEG;
@@ -144,6 +145,10 @@ function pixelToMilimeter(p) {
 
 printDataButton.addEventListener("click", function (event) {
   console.log(OBJtoXML(signaturePad.toData(), 0));
+});
+
+showLastDataButton.addEventListener("click", function (event) {
+  document.getElementById('last-data').value = OBJtoXML(signaturePad.toData(), 0)
 });
 
 savePNGButton.addEventListener("click", function (event) {
