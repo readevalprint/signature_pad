@@ -29,8 +29,8 @@ export interface IOptions {
   penColor?: string;
   throttle?: number;
   velocityFilterWeight?: number;
-  onBegin?: (event: PointerEvent) => void;
-  onEnd?: (event: PointerEvent) => void;
+  onBegin?: (event: any) => void;
+  onEnd?: (event: any) => void;
 }
 
 export interface IPointGroup {
@@ -48,8 +48,8 @@ export default class SignaturePad {
   public penColor: string;
   public throttle: number;
   public velocityFilterWeight: number;
-  public onBegin?: (event: PointerEvent) => void;
-  public onEnd?: (event: PointerEvent) => void;
+  public onBegin?: (event: any) => void;
+  public onEnd?: (event: any) => void;
 
   // Private stuff
   /* tslint:disable: variable-name */
@@ -69,7 +69,8 @@ export default class SignaturePad {
 
   private _lastVelocity: number;
   private _lastWidth: number;
-  private _strokeMoveUpdate: (event: PointerEvent) => void;
+  private _whichEvent: number; // 1: pointer  2: mouse  3: touch
+  private _strokeMoveUpdate: (event: any) => void;
   /* tslint:enable: variable-name */
 
   constructor(
@@ -173,7 +174,17 @@ export default class SignaturePad {
     this.canvas.style.touchAction = 'none';
     this.canvas.style.msTouchAction = 'none';
 
-    this._handlePointerEvents();
+    if (window.PointerEvent) {
+      this._handlePointerEvents();
+      this._whichEvent = 1;
+    } else {
+      this._handleMouseEvents();
+      this._whichEvent = 2;
+      if ('ontouchstart' in window) {
+        this._handleTouchEvents();
+        this._whichEvent = 3;
+      }
+    }
   }
 
   public off(): void {
@@ -184,6 +195,14 @@ export default class SignaturePad {
     this.canvas.removeEventListener('pointerdown', this._handlePointerDown);
     this.canvas.removeEventListener('pointermove', this._handlePointerMove);
     document.removeEventListener('pointerup', this._handlePointerUp);
+
+    this.canvas.removeEventListener('mousedown', this._handleMouseDown);
+    this.canvas.removeEventListener('mousemove', this._handleMouseMove);
+    document.removeEventListener('mouseup', this._handleMouseUp);
+
+    this.canvas.removeEventListener('touchstart', this._handleTouchStart);
+    this.canvas.removeEventListener('touchmove', this._handleTouchMove);
+    this.canvas.removeEventListener('touchend', this._handleTouchEnd);
   }
 
   public isEmpty(): boolean {
@@ -244,7 +263,6 @@ export default class SignaturePad {
         },
         'sig:RepresentationList': {
           'sig:Representation': {
-            'sig:CaptureDateAndTime': this._datetime,
             'sig:CaptureDevice': {
               'sig:DeviceID': {
                 'cmn:Organization': 259,
@@ -288,12 +306,14 @@ export default class SignaturePad {
     // inclusion += 0b0000010000000000; // AX
     // inclusion += 0b0000001000000000; // AY
     inclusion += 0b0000000100000000; // time
-    inclusion += 0b0000000010000000; // date time
+    // inclusion += 0b0000000010000000; // date time
     inclusion += 0b0000000000100000; // scale
     if (this.isTouch()) {
       inclusion += 0b0000000001000000; // pressure
-      inclusion += 0b0000000000010000; // tiltX
-      inclusion += 0b0000000000001000; // tiltY
+      if (this._whichEvent === 1) {
+        inclusion += 0b0000000000010000; // tiltX
+        inclusion += 0b0000000000001000; // tiltY
+      }
     }
     // inclusion += 0b0000000000000100; // azimuth
     // inclusion += 0b0000000000000010; // elevation
@@ -324,8 +344,58 @@ export default class SignaturePad {
     }
   };
 
+  private _handleMouseDown = (event: MouseEvent): void => {
+    if (event.which === 1) {
+      this._mouseButtonDown = true;
+      // this._pointerType = event.pointerType;
+      // this._pointerId = event.pointerId;
+      this._strokeBegin(event);
+    }
+  };
+
+  private _handleMouseMove = (event: MouseEvent): void => {
+    if (this._mouseButtonDown) {
+      this._strokeMoveUpdate(event);
+    }
+  };
+
+  private _handleMouseUp = (event: MouseEvent): void => {
+    if (event.which === 1 && this._mouseButtonDown) {
+      this._mouseButtonDown = false;
+      this._strokeEnd(event);
+    }
+  };
+
+  private _handleTouchStart = (event: TouchEvent): void => {
+    // Prevent scrolling.
+    event.preventDefault();
+
+    if (event.targetTouches.length === 1) {
+      const touch = event.changedTouches[0];
+      this._strokeBegin(touch);
+    }
+  };
+
+  private _handleTouchMove = (event: TouchEvent): void => {
+    // Prevent scrolling.
+    event.preventDefault();
+
+    const touch = event.targetTouches[0];
+    this._strokeMoveUpdate(touch);
+  };
+
+  private _handleTouchEnd = (event: TouchEvent): void => {
+    const wasCanvasTouched = event.target === this.canvas;
+    if (wasCanvasTouched) {
+      event.preventDefault();
+
+      const touch = event.changedTouches[0];
+      this._strokeEnd(touch);
+    }
+  };
+
   // Private methods
-  private _strokeBegin(event: PointerEvent): void {
+  private _strokeBegin(event: any): void {
     const newPointGroup = {
       color: this.penColor,
       points: []
@@ -340,7 +410,7 @@ export default class SignaturePad {
     this._strokeUpdate(event);
   }
 
-  private _strokeUpdate(event: PointerEvent): void {
+  private _strokeUpdate(event: any): void {
     const x = event.clientX;
     const y = event.clientY;
 
@@ -364,27 +434,35 @@ export default class SignaturePad {
         this._drawCurve({ color, curve });
       }
 
+      let p = 0;
+      if (this.isTouch()) {
+        if (this._whichEvent === 1) {
+          p = event.pressure;
+        } else {
+          p = event.force;
+        }
+      }
+
       const d = new Date();
       if (this._time1 < 0) {
         this._time1 = d.getTime();
         this._time = 0;
-        this._datetime = d.toISOString().slice(0, 19);
       } else {
         this._time = d.getTime() - this._time1;
       }
 
       lastPoints.push({
-        pressure: this.isTouch() ? event.pressure : 0,
+        pressure: p,
         time: point.time - this._time1,
         x: point.x,
         y: point.y,
-        tiltX: event.tiltX,
-        tiltY: event.tiltY
+        tiltX: this._whichEvent === 1 ? event.tiltX : 0,
+        tiltY: this._whichEvent === 1 ? event.tiltY : 0
       });
     }
   }
 
-  private _strokeEnd(event: PointerEvent): void {
+  private _strokeEnd(event: any): void {
     this._strokeUpdate(event);
 
     if (typeof this.onEnd === 'function') {
@@ -398,6 +476,20 @@ export default class SignaturePad {
     this.canvas.addEventListener('pointerdown', this._handlePointerDown);
     this.canvas.addEventListener('pointermove', this._handlePointerMove);
     document.addEventListener('pointerup', this._handlePointerUp);
+  }
+
+  private _handleMouseEvents(): void {
+    this._mouseButtonDown = false;
+
+    this.canvas.addEventListener('mousedown', this._handleMouseDown);
+    this.canvas.addEventListener('mousemove', this._handleMouseMove);
+    document.addEventListener('mouseup', this._handleMouseUp);
+  }
+
+  private _handleTouchEvents(): void {
+    this.canvas.addEventListener('touchstart', this._handleTouchStart);
+    this.canvas.addEventListener('touchmove', this._handleTouchMove);
+    this.canvas.addEventListener('touchend', this._handleTouchEnd);
   }
 
   // Called when a new line is started
