@@ -1,15 +1,17 @@
 // Interface for point data structure used e.g. in SignaturePad#fromData method
 export interface IBasicPoint {
   pressure: number;
-  x: number;
-  y: number;
+  rotation: number;
   tiltX: number;
   tiltY: number;
   time: number;
+  x: number;
+  y: number;
 }
 
 export class Point implements IBasicPoint {
   public pressure: number;
+  public rotation: number;
   public time: number;
   public tiltX: number;
   public tiltY: number;
@@ -17,6 +19,7 @@ export class Point implements IBasicPoint {
   constructor(public x: number, public y: number, time?: number, pressure?: number) {
     this.time = time || Date.now();
     this.pressure = pressure || -1;
+    this.rotation = 0;
     this.tiltX = 0;
     this.tiltY = 0;
   }

@@ -246,12 +246,14 @@ export default class SignaturePad {
           'sig:FChannel': point.pressure * this._pressureScale,
           'sig:PenOrient': {
             'sig:TiltAlongX': point.tiltX * this._angleScale,
-            'sig:TiltAlongY': point.tiltY * this._angleScale
+            'sig:TiltAlongY': point.tiltY * this._angleScale,
+            'sig:PenRotation': point.rotation * this._angleScale
           }
         };
         if (this.isTouch()) {
           if (this._whichEvent !== 1) {
-            delete pointdata['sig:PenOrient'];
+            delete pointdata['sig:PenOrient']['sig:TiltAlongX'];
+            delete pointdata['sig:PenOrient']['sig:TiltAlongY'];
           }
         } else {
           delete pointdata['sig:FChannel'];
@@ -321,10 +323,10 @@ export default class SignaturePad {
         inclusion += 0b0000000000010000; // tiltX
         inclusion += 0b0000000000001000; // tiltY
       }
+      inclusion += 0b0000000000000001; // rotation
     }
     // inclusion += 0b0000000000000100; // azimuth
     // inclusion += 0b0000000000000010; // elevation
-    // inclusion += 0b0000000000000001; // rotation
     return inclusion;
   }
 
@@ -450,16 +452,20 @@ export default class SignaturePad {
       }
 
       let p = -1;
+      let r = -1;
       if (this.isTouch()) {
         if (this._whichEvent === 1) {
           p = event.pressure;
+          r = event.twist;
         } else {
           p = event.force;
+          r = event.rotationAngle;
         }
       }
 
       lastPoints.push({
         pressure: p,
+        rotation: r,
         time: point.time - this._time1,
         x: point.x,
         y: point.y,
