@@ -237,19 +237,27 @@ export default class SignaturePad {
     const pointsdata = [];
     for (const line of this._data) {
       for (const point of line.points) {
-        pointsdata.push({
+        const pointdata = {
           'sig:TimeChannel': point.time * this._timeScale / 1000,
           'sig:PenTipCoord': {
             'cmn:X': this.pixelToMilimeter(point.x),
             'cmn:Y': this.pixelToMilimeter(point.y),
-            // 'cmn:Z': 0
           },
           'sig:FChannel': point.pressure * this._pressureScale,
           'sig:PenOrient': {
             'sig:TiltAlongX': point.tiltX * this._angleScale,
             'sig:TiltAlongY': point.tiltY * this._angleScale
           }
-        })
+        };
+        if (this.isTouch()) {
+          if (this._whichEvent !== 1) {
+            delete pointdata['sig:PenOrient'];
+          }
+        } else {
+          delete pointdata['sig:FChannel'];
+          delete pointdata['sig:PenOrient'];
+        }
+        pointsdata.push(pointdata);
       }
     }
     return {
@@ -305,7 +313,7 @@ export default class SignaturePad {
     // inclusion += 0b0000010000000000; // AX
     // inclusion += 0b0000001000000000; // AY
     inclusion += 0b0000000100000000; // time
-    // inclusion += 0b0000000010000000; // date time
+    // inclusion += 0b0000000010000000; // duration time
     inclusion += 0b0000000000100000; // scale
     if (this.isTouch()) {
       inclusion += 0b0000000001000000; // pressure
@@ -433,15 +441,6 @@ export default class SignaturePad {
         this._drawCurve({ color, curve });
       }
 
-      let p = 0;
-      if (this.isTouch()) {
-        if (this._whichEvent === 1) {
-          p = event.pressure;
-        } else {
-          p = event.force;
-        }
-      }
-
       const d = new Date();
       if (this._time1 < 0) {
         this._time1 = d.getTime();
@@ -450,13 +449,22 @@ export default class SignaturePad {
         this._time = d.getTime() - this._time1;
       }
 
+      let p = -1;
+      if (this.isTouch()) {
+        if (this._whichEvent === 1) {
+          p = event.pressure;
+        } else {
+          p = event.force;
+        }
+      }
+
       lastPoints.push({
         pressure: p,
         time: point.time - this._time1,
         x: point.x,
         y: point.y,
-        tiltX: this._whichEvent === 1 ? event.tiltX : 0,
-        tiltY: this._whichEvent === 1 ? event.tiltY : 0
+        tiltX: this._whichEvent === 1 ? event.tiltX : -1,
+        tiltY: this._whichEvent === 1 ? event.tiltY : -1
       });
     }
   }
