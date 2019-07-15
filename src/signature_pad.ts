@@ -9,9 +9,10 @@
  * http://www.lemoda.net/maths/bezier-length/index.html
  */
 
-import { Bezier } from './bezier';
-import { IBasicPoint, Point } from './point';
-import { throttle } from './throttle';
+import {Bezier} from './bezier';
+import {IBasicPoint, Point} from './point';
+import {throttle} from './throttle';
+import {IBiometricPoint, IBiometricSignature, IBiometricSignatureRooted, interfaceReplacementsMap} from './biometric';
 
 declare global {
   // tslint:disable-next-line:interface-name
@@ -38,6 +39,51 @@ export interface IPointGroup {
   points: IBasicPoint[];
 }
 
+const pixelMm = function (): number {
+  // Return the amount of millimeters each pixel needs to be multiplicated with
+  const div = document.createElement("div");
+  div.style.height = "1000mm";
+  div.style.width = "1000mm";
+  div.style.top = "-100%";
+  div.style.left = "-100%";
+  div.style.position = "absolute";
+  document.body.appendChild(div);
+  const result = div.offsetHeight;
+  document.body.removeChild(div);
+  return 1 / result * 1000;
+};
+
+const objToXML = function (obj: any, tabDepth: number) {
+  let xml = '';
+  for (let prop in obj) {
+    let tabStr = '';
+    for (let i = 0; i < tabDepth; i++) {
+      tabStr += '\t';
+    }
+    if (obj[prop] instanceof Array) {
+      for (let array in obj[prop]) {
+        xml += tabStr;
+        xml += '<' + prop + '>\n';
+        xml += objToXML(new Object(obj[prop][array]), tabDepth + 1);
+        xml += tabStr;
+        xml += '</' + prop + '>\n';
+      }
+    } else if (typeof obj[prop] == 'object') {
+      xml += tabStr;
+      xml += '<' + prop + '>';
+      xml += '\n';
+      xml += objToXML(new Object(obj[prop]), tabDepth + 1);
+      xml += tabStr;
+    } else {
+      xml += tabStr;
+      xml += '<' + prop + '>';
+      xml += obj[prop];
+    }
+    xml += obj[prop] instanceof Array ? '' : '</' + prop + '>\n';
+  }
+  return xml
+};
+
 export default class SignaturePad {
   // Public stuff
   public dotSize: number | (() => number);
@@ -58,9 +104,13 @@ export default class SignaturePad {
   private _isEmpty: boolean;
   private _lastPoints: Point[]; // Stores up to 4 most recent points; used to generate a new curve
   private _data: IPointGroup[]; // Stores all points in groups (one group per line or dot)
-  private _time1: number; // Time of start
-  private _time: number; // Time
   private _pointerType: string; // mouse, pen, touch
+
+  // Related to biometric signature
+  private _pixelMm: number; // Amount of space in mm taken by a single pixel
+  private _timeLastPoint: number; // Time of start
+  private _time: number; // Time
+  private _datetimeStarted: string;
   private _angleScale: number = 1000; // Angle scaling value
   private _timeScale: number = 1000; // Time scaling value
   private _pressureScale: number = 1000; // Time scaling value
@@ -70,6 +120,7 @@ export default class SignaturePad {
   private _lastWidth: number;
   private _whichEvent: number; // 1: pointer  2: mouse  3: touch
   private _strokeMoveUpdate: (event: any) => void;
+
   /* tslint:enable: variable-name */
 
   constructor(
@@ -120,7 +171,8 @@ export default class SignaturePad {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     this._data = [];
-    this._time1 = -1;
+    this._timeLastPoint = -1;
+    this._datetimeStarted = new Date().toISOString();
     this._reset();
     this._isEmpty = true;
   }
@@ -213,101 +265,101 @@ export default class SignaturePad {
 
     this._fromData(
       pointGroups,
-      ({ color, curve }) => this._drawCurve({ color, curve }),
-      ({ color, point }) => this._drawDot({ color, point }),
+      ({color, curve}) => this._drawCurve({color, curve}),
+      ({color, point}) => this._drawDot({color, point}),
     );
 
     this._data = pointGroups;
   }
 
-  public pixelToMilimeter(p: number): number {
-    const div = document.createElement( "div");
-    div.style.height = "1000mm";
-    div.style.width = "1000mm";
-    div.style.top = "-100%";
-    div.style.left = "-100%";
-    div.style.position = "absolute";
-    document.body.appendChild(div);
-    const result =  div.offsetHeight;
-    document.body.removeChild( div );
-    return Math.floor(p / result * 1000);
+  public toData(): IPointGroup[] {
+    return this._data;
   }
 
-  public toData(): object {
-    const pointsdata = [];
+  public toBiometricData(): IBiometricSignatureRooted {
+    // Compute only once
+    this._pixelMm = pixelMm();
+    console.log(this._pixelMm);
+    const biometricPoints = [];
     for (const line of this._data) {
       for (const point of line.points) {
-        const pointdata = {
-          'sig:TimeChannel': point.time * this._timeScale / 1000,
-          'sig:PenTipCoord': {
-            'cmn:X': this.pixelToMilimeter(point.x),
-            'cmn:Y': this.pixelToMilimeter(point.y),
+        const biometricPoint: IBiometricPoint = {
+          tc: point.time * this._timeScale / 1000,
+          ptc: {
+            cx: point.x * this._pixelMm,
+            cy: point.y * this._pixelMm,
           },
-          'sig:FChannel': point.pressure * this._pressureScale,
-          'sig:PenOrient': {
-            'sig:TiltAlongX': point.tiltX * this._angleScale,
-            'sig:TiltAlongY': point.tiltY * this._angleScale,
-            'sig:PenAzimuth': point.altitude * this._angleScale,
-            'sig:PenElevation': point.azimuth * this._angleScale,
-            'sig:PenRotation': point.rotation * this._angleScale
+          fc: point.pressure * this._pressureScale,
+          po: {
+            tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltX * this._angleScale,
+            tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltY * this._angleScale,
+            pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.azimuth * this._angleScale,
+            pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.altitude * this._angleScale,
+            pr: point.rotation * this._angleScale
           }
         };
-        if (this.isTouch()) {
-          if (this._whichEvent !== 1) {
-            delete pointdata['sig:PenOrient']['sig:TiltAlongX'];
-            delete pointdata['sig:PenOrient']['sig:TiltAlongY'];
-          }
-          if (this._whichEvent !== 3) {
-            delete pointdata['sig:PenOrient']['sig:PenAzimuth'];
-            delete pointdata['sig:PenOrient']['sig:PenElevation'];
-          }
-        } else {
-          delete pointdata['sig:FChannel'];
-          delete pointdata['sig:PenOrient'];
+        if (!this.isTouch()) {
+          delete biometricPoint.fc;
+          delete biometricPoint.po;
         }
-        pointsdata.push(pointdata);
+        biometricPoints.push(biometricPoint);
       }
     }
+
     return {
-      'sig:SignatureSignTimeSeries': {
-        'sig:Version': {
-          'cmn:Major': 1,
-          'cmn:Minor': 0
+      root: {
+        v: {
+          maj: 1,
+          min: 0
         },
-        'sig:RepresentationList': {
-          'sig:Representation': {
-            'sig:CaptureDevice': {
-              'sig:DeviceID': {
-                'cmn:Organization': 259,
-                'cmn:Identifier': this._pointerId
+        rl: {
+          r: {
+            dt: this._datetimeStarted,
+            dev: {
+              did: {
+                org: 259,
+                ident: this._pointerId.toString()
               },
-              'sig:DeviceTechnology': this._pointerType,
+              tec: this._pointerType
             },
-            'sig:InclusionField': this._inclusionField().toString(16).toUpperCase(),
-            'sig:ChannelDescriptionList': {
+            inc: this._inclusionField().toString(16).toUpperCase(),
+            cdl: {
               'sig:PenTipOrientationChannelDescription': {
-                'sig:ScalingValue': this._angleScale,
-                'sig:MinChannelValue': 0,
-                'sig:MaxChannelValue': 90 * this._angleScale
+                scVal: this._angleScale,
+                minVal: 0,
+                maxVal: 90 * this._angleScale
               },
               'sig:TChannelDescription': {
-                'sig:ScalingValue': this._timeScale,
-                'sig:MinChannelValue': 0,
-                'sig:MaxChannelValue': this._time * this._timeScale
+                scVal: this._timeScale,
+                minVal: 0,
+                maxVal: this._time * this._timeScale
               },
               'sig:FChannelDescription': {
-                'sig:ScalingValue': this._pressureScale,
-                'sig:MinChannelValue': 0,
-                'sig:MaxChannelValue': this._pressureScale
+                scVal: this._pressureScale,
+                minVal: 0,
+                maxVal: this._pressureScale
               }
             },
-            'sig:SamplePointList': {
-              'sig:SamplePoint': pointsdata
+            spl: {
+              sp: biometricPoints
             }
           }
+        },
+        vsd: {
+          typecode: 1,
+          data: ''
         }
       }
     };
+  }
+
+  public toBiometricXML(signatureData: IBiometricSignatureRooted) {
+    let signatureDataString = JSON.stringify(signatureData);
+    for (const key in interfaceReplacementsMap) {
+      signatureDataString = signatureDataString.replace(new RegExp(`"${key}":`, 'g'), `"${interfaceReplacementsMap[key]}":`)
+    }
+    const convertedSignatureData = JSON.parse(signatureDataString);
+    return objToXML(convertedSignatureData, 0)
   }
 
   private _inclusionField(): number {
@@ -445,17 +497,17 @@ export default class SignaturePad {
       const curve = this._addPoint(point);
 
       if (!lastPoint) {
-        this._drawDot({ color, point });
+        this._drawDot({color, point});
       } else if (curve) {
-        this._drawCurve({ color, curve });
+        this._drawCurve({color, curve});
       }
 
       const d = new Date();
-      if (this._time1 < 0) {
-        this._time1 = d.getTime();
+      if (this._timeLastPoint < 0) {
+        this._timeLastPoint = d.getTime();
         this._time = 0;
       } else {
-        this._time = d.getTime() - this._time1;
+        this._time = d.getTime() - this._timeLastPoint;
       }
 
       const pt = {
@@ -463,12 +515,13 @@ export default class SignaturePad {
         azimuth: -1,
         pressure: -1,
         rotation: -1,
-        time: point.time - this._time1,
+        time: point.time - this._timeLastPoint,
         x: point.x,
         y: point.y,
         tiltX: this._whichEvent === 1 ? event.tiltX : -1,
         tiltY: this._whichEvent === 1 ? event.tiltY : -1
-      }
+      };
+
       if (this.isTouch()) {
         if (this._whichEvent === 1) {
           pt.pressure = event.pressure;
@@ -532,7 +585,7 @@ export default class SignaturePad {
 
   // Add point to _lastPoints array and generate a new curve if there are enough points (i.e. 3)
   private _addPoint(point: Point): Bezier | null {
-    const { _lastPoints } = this;
+    const {_lastPoints} = this;
 
     _lastPoints.push(point);
 
@@ -589,7 +642,7 @@ export default class SignaturePad {
     this._isEmpty = false;
   }
 
-  private _drawCurve({ color, curve }: { color: string; curve: Bezier }): void {
+  private _drawCurve({color, curve}: { color: string; curve: Bezier }): void {
     const ctx = this._ctx;
     const widthDelta = curve.endWidth - curve.startWidth;
     // '2' is just an arbitrary number here. If only lenght is used, then
@@ -627,9 +680,9 @@ export default class SignaturePad {
   }
 
   private _drawDot({
-    color,
-    point,
-  }: {
+                     color,
+                     point,
+                   }: {
     color: string;
     point: IBasicPoint;
   }): void {
@@ -650,7 +703,7 @@ export default class SignaturePad {
     drawDot: SignaturePad['_drawDot'],
   ): void {
     for (const group of pointGroups) {
-      const { color, points } = group;
+      const {color, points} = group;
 
       if (points.length > 1) {
         for (let j = 0; j < points.length; j += 1) {
@@ -668,7 +721,7 @@ export default class SignaturePad {
           const curve = this._addPoint(point);
 
           if (curve) {
-            drawCurve({ color, curve });
+            drawCurve({color, curve});
           }
         }
       } else {
@@ -684,11 +737,11 @@ export default class SignaturePad {
 
   private _toSVG(): string {
     const pointGroups = this._data;
-    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    // const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    // const maxX = this.canvas.width / ratio;
+    // const maxY = this.canvas.height / ratio;
     const minX = 0;
     const minY = 0;
-    const maxX = this.canvas.width / ratio;
-    const maxY = this.canvas.height / ratio;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 
     svg.setAttribute('width', this.canvas.width.toString());
@@ -697,7 +750,7 @@ export default class SignaturePad {
     this._fromData(
       pointGroups,
 
-      ({ color, curve }: { color: string; curve: Bezier }) => {
+      ({color, curve}: { color: string; curve: Bezier }) => {
         const path = document.createElement('path');
 
         // Need to check curve for NaN values, these pop up when drawing
@@ -728,7 +781,7 @@ export default class SignaturePad {
         /* eslint-enable no-restricted-globals */
       },
 
-      ({ color, point }: { color: string; point: IBasicPoint }) => {
+      ({color, point}: { color: string; point: IBasicPoint }) => {
         const circle = document.createElement('circle');
         const dotSize =
           typeof this.dotSize === 'function' ? this.dotSize() : this.dotSize;
@@ -747,12 +800,13 @@ export default class SignaturePad {
       ' xmlns="http://www.w3.org/2000/svg"' +
       ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
       ` viewBox="${minX} ${minY} ${this.canvas.width} ${this.canvas.height}"` +
-      ` width="${maxX}"` +
-      ` height="${maxY}"` +
+      ` width="${this.canvas.width}"` +
+      ` height="${this.canvas.height}"` +
       '>';
     let body = svg.innerHTML;
 
     // IE hack for missing innerHTML property on SVGElement
+    // noinspection TypeScriptValidateTypes
     if (body === undefined) {
       const dummy = document.createElement('dummy');
       const nodes = svg.childNodes;

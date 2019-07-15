@@ -141,6 +141,86 @@
       };
   }
 
+  var interfaceReplacementsMap = {
+      cx: 'cmn:X',
+      cy: 'cmn:Y',
+      tax: 'sig:TiltAlongX',
+      tay: 'sig:TiltAlongY',
+      pa: 'sig:PenAzimuth',
+      pe: 'sig:PenElevation',
+      pr: 'sig:PenRotation',
+      tc: 'sig:TimeChannel',
+      ptc: 'sig:PenTipCoord',
+      fc: 'sig:FChannel',
+      po: 'sig:PenOrient',
+      maj: 'cmn:Major',
+      min: 'cmn:Minor',
+      org: 'cmn:Organization',
+      ident: 'cmn:Identifier',
+      did: 'sig:DeviceID',
+      tec: 'sig:DeviceTechnology',
+      scVal: 'sig:ScalingValue',
+      minVal: 'sig:MinChannelValue',
+      maxVal: 'sig:MaxChannelValue',
+      sp: 'sig:SamplePoint',
+      dt: 'sig:CaptureDateAndTime',
+      dev: 'sig:CaptureDevice',
+      inc: 'sig:InclusionField',
+      cdl: 'sig:ChannelDescriptionList',
+      spl: 'sig:SamplePointList',
+      r: 'sig:Representation',
+      typecode: 'cmn:TypeCode',
+      data: 'cmn:Data',
+      v: 'sig:Version',
+      rl: 'sig:RepresentationList',
+      vsd: 'sig:VendorSpecificData',
+      root: 'sig:SignatureSignTimeSeries'
+  };
+
+  var pixelMm = function () {
+      var div = document.createElement("div");
+      div.style.height = "1000mm";
+      div.style.width = "1000mm";
+      div.style.top = "-100%";
+      div.style.left = "-100%";
+      div.style.position = "absolute";
+      document.body.appendChild(div);
+      var result = div.offsetHeight;
+      document.body.removeChild(div);
+      return 1 / result * 1000;
+  };
+  var objToXML = function (obj, tabDepth) {
+      var xml = '';
+      for (var prop in obj) {
+          var tabStr = '';
+          for (var i = 0; i < tabDepth; i++) {
+              tabStr += '\t';
+          }
+          if (obj[prop] instanceof Array) {
+              for (var array in obj[prop]) {
+                  xml += tabStr;
+                  xml += '<' + prop + '>\n';
+                  xml += objToXML(new Object(obj[prop][array]), tabDepth + 1);
+                  xml += tabStr;
+                  xml += '</' + prop + '>\n';
+              }
+          }
+          else if (typeof obj[prop] == 'object') {
+              xml += tabStr;
+              xml += '<' + prop + '>';
+              xml += '\n';
+              xml += objToXML(new Object(obj[prop]), tabDepth + 1);
+              xml += tabStr;
+          }
+          else {
+              xml += tabStr;
+              xml += '<' + prop + '>';
+              xml += obj[prop];
+          }
+          xml += obj[prop] instanceof Array ? '' : '</' + prop + '>\n';
+      }
+      return xml;
+  };
   var SignaturePad = (function () {
       function SignaturePad(canvas, options) {
           if (options === void 0) { options = {}; }
@@ -242,7 +322,8 @@
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           this._data = [];
-          this._time1 = -1;
+          this._timeLastPoint = -1;
+          this._datetimeStarted = new Date().toISOString();
           this._reset();
           this._isEmpty = true;
       };
@@ -327,96 +408,92 @@
           });
           this._data = pointGroups;
       };
-      SignaturePad.prototype.pixelToMilimeter = function (p) {
-          var div = document.createElement("div");
-          div.style.height = "1000mm";
-          div.style.width = "1000mm";
-          div.style.top = "-100%";
-          div.style.left = "-100%";
-          div.style.position = "absolute";
-          document.body.appendChild(div);
-          var result = div.offsetHeight;
-          document.body.removeChild(div);
-          return Math.floor(p / result * 1000);
-      };
       SignaturePad.prototype.toData = function () {
-          var pointsdata = [];
+          return this._data;
+      };
+      SignaturePad.prototype.toBiometricData = function () {
+          this._pixelMm = pixelMm();
+          console.log(this._pixelMm);
+          var biometricPoints = [];
           for (var _i = 0, _a = this._data; _i < _a.length; _i++) {
               var line = _a[_i];
               for (var _b = 0, _c = line.points; _b < _c.length; _b++) {
                   var point = _c[_b];
-                  var pointdata = {
-                      'sig:TimeChannel': point.time * this._timeScale / 1000,
-                      'sig:PenTipCoord': {
-                          'cmn:X': this.pixelToMilimeter(point.x),
-                          'cmn:Y': this.pixelToMilimeter(point.y)
+                  var biometricPoint = {
+                      tc: point.time * this._timeScale / 1000,
+                      ptc: {
+                          cx: point.x * this._pixelMm,
+                          cy: point.y * this._pixelMm
                       },
-                      'sig:FChannel': point.pressure * this._pressureScale,
-                      'sig:PenOrient': {
-                          'sig:TiltAlongX': point.tiltX * this._angleScale,
-                          'sig:TiltAlongY': point.tiltY * this._angleScale,
-                          'sig:PenAzimuth': point.altitude * this._angleScale,
-                          'sig:PenElevation': point.azimuth * this._angleScale,
-                          'sig:PenRotation': point.rotation * this._angleScale
+                      fc: point.pressure * this._pressureScale,
+                      po: {
+                          tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltX * this._angleScale,
+                          tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltY * this._angleScale,
+                          pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.azimuth * this._angleScale,
+                          pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.altitude * this._angleScale,
+                          pr: point.rotation * this._angleScale
                       }
                   };
-                  if (this.isTouch()) {
-                      if (this._whichEvent !== 1) {
-                          delete pointdata['sig:PenOrient']['sig:TiltAlongX'];
-                          delete pointdata['sig:PenOrient']['sig:TiltAlongY'];
-                      }
-                      if (this._whichEvent !== 3) {
-                          delete pointdata['sig:PenOrient']['sig:PenAzimuth'];
-                          delete pointdata['sig:PenOrient']['sig:PenElevation'];
-                      }
+                  if (!this.isTouch()) {
+                      delete biometricPoint.fc;
+                      delete biometricPoint.po;
                   }
-                  else {
-                      delete pointdata['sig:FChannel'];
-                      delete pointdata['sig:PenOrient'];
-                  }
-                  pointsdata.push(pointdata);
+                  biometricPoints.push(biometricPoint);
               }
           }
           return {
-              'sig:SignatureSignTimeSeries': {
-                  'sig:Version': {
-                      'cmn:Major': 1,
-                      'cmn:Minor': 0
+              root: {
+                  v: {
+                      maj: 1,
+                      min: 0
                   },
-                  'sig:RepresentationList': {
-                      'sig:Representation': {
-                          'sig:CaptureDevice': {
-                              'sig:DeviceID': {
-                                  'cmn:Organization': 259,
-                                  'cmn:Identifier': this._pointerId
+                  rl: {
+                      r: {
+                          dt: this._datetimeStarted,
+                          dev: {
+                              did: {
+                                  org: 259,
+                                  ident: this._pointerId.toString()
                               },
-                              'sig:DeviceTechnology': this._pointerType
+                              tec: this._pointerType
                           },
-                          'sig:InclusionField': this._inclusionField().toString(16).toUpperCase(),
-                          'sig:ChannelDescriptionList': {
+                          inc: this._inclusionField().toString(16).toUpperCase(),
+                          cdl: {
                               'sig:PenTipOrientationChannelDescription': {
-                                  'sig:ScalingValue': this._angleScale,
-                                  'sig:MinChannelValue': 0,
-                                  'sig:MaxChannelValue': 90 * this._angleScale
+                                  scVal: this._angleScale,
+                                  minVal: 0,
+                                  maxVal: 90 * this._angleScale
                               },
                               'sig:TChannelDescription': {
-                                  'sig:ScalingValue': this._timeScale,
-                                  'sig:MinChannelValue': 0,
-                                  'sig:MaxChannelValue': this._time * this._timeScale
+                                  scVal: this._timeScale,
+                                  minVal: 0,
+                                  maxVal: this._time * this._timeScale
                               },
                               'sig:FChannelDescription': {
-                                  'sig:ScalingValue': this._pressureScale,
-                                  'sig:MinChannelValue': 0,
-                                  'sig:MaxChannelValue': this._pressureScale
+                                  scVal: this._pressureScale,
+                                  minVal: 0,
+                                  maxVal: this._pressureScale
                               }
                           },
-                          'sig:SamplePointList': {
-                              'sig:SamplePoint': pointsdata
+                          spl: {
+                              sp: biometricPoints
                           }
                       }
+                  },
+                  vsd: {
+                      typecode: 1,
+                      data: ''
                   }
               }
           };
+      };
+      SignaturePad.prototype.toBiometricXML = function (signatureData) {
+          var signatureDataString = JSON.stringify(signatureData);
+          for (var key in interfaceReplacementsMap) {
+              signatureDataString = signatureDataString.replace(new RegExp("\"" + key + "\":", 'g'), "\"" + interfaceReplacementsMap[key] + "\":");
+          }
+          var convertedSignatureData = JSON.parse(signatureDataString);
+          return objToXML(convertedSignatureData, 0);
       };
       SignaturePad.prototype._inclusionField = function () {
           var inclusion = 0;
@@ -470,19 +547,19 @@
                   this._drawCurve({ color: color, curve: curve });
               }
               var d = new Date();
-              if (this._time1 < 0) {
-                  this._time1 = d.getTime();
+              if (this._timeLastPoint < 0) {
+                  this._timeLastPoint = d.getTime();
                   this._time = 0;
               }
               else {
-                  this._time = d.getTime() - this._time1;
+                  this._time = d.getTime() - this._timeLastPoint;
               }
               var pt = {
                   altitude: -1,
                   azimuth: -1,
                   pressure: -1,
                   rotation: -1,
-                  time: point.time - this._time1,
+                  time: point.time - this._timeLastPoint,
                   x: point.x,
                   y: point.y,
                   tiltX: this._whichEvent === 1 ? event.tiltX : -1,
@@ -641,11 +718,8 @@
       SignaturePad.prototype._toSVG = function () {
           var _this = this;
           var pointGroups = this._data;
-          var ratio = Math.max(window.devicePixelRatio || 1, 1);
           var minX = 0;
           var minY = 0;
-          var maxX = this.canvas.width / ratio;
-          var maxY = this.canvas.height / ratio;
           var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           svg.setAttribute('width', this.canvas.width.toString());
           svg.setAttribute('height', this.canvas.height.toString());
@@ -682,8 +756,8 @@
               ' xmlns="http://www.w3.org/2000/svg"' +
               ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
               (" viewBox=\"" + minX + " " + minY + " " + this.canvas.width + " " + this.canvas.height + "\"") +
-              (" width=\"" + maxX + "\"") +
-              (" height=\"" + maxY + "\"") +
+              (" width=\"" + this.canvas.width + "\"") +
+              (" height=\"" + this.canvas.height + "\"") +
               '>';
           var body = svg.innerHTML;
           if (body === undefined) {
