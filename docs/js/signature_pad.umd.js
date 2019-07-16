@@ -4,10 +4,12 @@
  */
 
 (function (global, factory) {
-  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
-  typeof define === 'function' && define.amd ? define(factory) :
-  (global.SignaturePad = factory());
-}(this, (function () { 'use strict';
+  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('axios')) :
+  typeof define === 'function' && define.amd ? define(['axios'], factory) :
+  (global.SignaturePad = factory(global.axios));
+}(this, (function (axios) { 'use strict';
+
+  axios = axios && axios.hasOwnProperty('default') ? axios['default'] : axios;
 
   var Point = (function () {
       function Point(x, y, time, pressure) {
@@ -205,7 +207,7 @@
                   xml += '</' + prop + '>\n';
               }
           }
-          else if (typeof obj[prop] == 'object') {
+          else if (typeof obj[prop] === 'object') {
               xml += tabStr;
               xml += '<' + prop + '>';
               xml += '\n';
@@ -230,12 +232,11 @@
           this._angleScale = 1000;
           this._timeScale = 1000;
           this._pressureScale = 1000;
-          this._pointerId = 0;
+          this._clientInfo = '';
           this._handlePointerDown = function (event) {
               if (event.which === 1) {
                   _this._mouseButtonDown = true;
                   _this._pointerType = event.pointerType;
-                  _this._pointerId = event.pointerId;
                   _this._strokeBegin(event);
               }
           };
@@ -313,6 +314,7 @@
           this.onEnd = options.onEnd;
           this._ctx = canvas.getContext('2d');
           this.clear();
+          this._fetchClientInfo();
           this.on();
       }
       SignaturePad.prototype.clear = function () {
@@ -413,7 +415,6 @@
       };
       SignaturePad.prototype.toBiometricData = function () {
           this._pixelMm = pixelMm();
-          console.log(this._pixelMm);
           var biometricPoints = [];
           for (var _i = 0, _a = this._data; _i < _a.length; _i++) {
               var line = _a[_i];
@@ -453,7 +454,7 @@
                           dev: {
                               did: {
                                   org: 259,
-                                  ident: this._pointerId.toString()
+                                  ident: this._clientInfo
                               },
                               tec: this._pointerType
                           },
@@ -514,6 +515,18 @@
               inclusion += 1;
           }
           return inclusion;
+      };
+      SignaturePad.prototype._fetchClientInfo = function () {
+          var _this = this;
+          axios.get('https://idana-development.appspot.com/api/public/info')
+              .then(function (response) {
+              _this._clientInfo = JSON.stringify(response.data);
+          })["catch"](function (error) {
+              _this._clientInfo = JSON.stringify({
+                  error: 'Could not get client info: ' + error.toString()
+              });
+              console.log(error);
+          });
       };
       SignaturePad.prototype._strokeBegin = function (event) {
           var newPointGroup = {

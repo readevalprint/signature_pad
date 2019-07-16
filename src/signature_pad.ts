@@ -12,7 +12,8 @@
 import {Bezier} from './bezier';
 import {IBasicPoint, Point} from './point';
 import {throttle} from './throttle';
-import {IBiometricPoint, IBiometricSignature, IBiometricSignatureRooted, interfaceReplacementsMap} from './biometric';
+import {IBiometricPoint, IBiometricSignatureRooted, interfaceReplacementsMap} from './biometric';
+import axios from 'axios';
 
 declare global {
   // tslint:disable-next-line:interface-name
@@ -113,8 +114,9 @@ export default class SignaturePad {
   private _datetimeStarted: string;
   private _angleScale: number = 1000; // Angle scaling value
   private _timeScale: number = 1000; // Time scaling value
-  private _pressureScale: number = 1000; // Time scaling value
-  private _pointerId: number = 0;
+  private _pressureScale: number = 1000; // Pressure scaling value
+  private _clientInfo: string = '';
+  // private _pointerId: number = 0;
 
   private _lastVelocity: number;
   private _lastWidth: number;
@@ -156,6 +158,9 @@ export default class SignaturePad {
 
     this._ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
     this.clear();
+
+    // Fetch client information to include in the biometric signature
+    this._fetchClientInfo();
 
     // Enable mouse and touch event handlers
     this.on();
@@ -279,7 +284,6 @@ export default class SignaturePad {
   public toBiometricData(): IBiometricSignatureRooted {
     // Compute only once
     this._pixelMm = pixelMm();
-    // console.log(this._pixelMm);
     const biometricPoints = [];
     for (const line of this._data) {
       for (const point of line.points) {
@@ -318,7 +322,7 @@ export default class SignaturePad {
             dev: {
               did: {
                 org: 259,
-                ident: this._pointerId.toString()
+                ident: this._clientInfo
               },
               tec: this._pointerType
             },
@@ -389,12 +393,26 @@ export default class SignaturePad {
     return inclusion;
   }
 
+  private _fetchClientInfo(): void {
+    axios.get('https://idana-development.appspot.com/api/public/info')
+      .then((response) => {
+        this._clientInfo = JSON.stringify(response.data)
+      })
+      .catch((error) => {
+        // handle error
+        this._clientInfo = JSON.stringify({
+          error: 'Could not get client info: ' + error.toString()
+        });
+        console.log(error);
+      })
+  }
+
   // Event handlers
   private _handlePointerDown = (event: PointerEvent): void => {
     if (event.which === 1) {
       this._mouseButtonDown = true;
       this._pointerType = event.pointerType;
-      this._pointerId = event.pointerId;
+      // this._pointerId = event.pointerId;
       this._strokeBegin(event);
     }
   };
