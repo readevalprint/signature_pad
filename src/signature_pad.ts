@@ -39,7 +39,7 @@ export interface IPointGroup {
   points: IBasicPoint[];
 }
 
-const pixelMm = function (): number {
+const pixelMm = () => {
   // Return the amount of millimeters each pixel needs to be multiplicated with
   const div = document.createElement("div");
   div.style.height = "1000mm";
@@ -53,7 +53,7 @@ const pixelMm = function (): number {
   return 1 / result * 1000;
 };
 
-const objToXML = function (obj: any, tabDepth: number) {
+const objToXML = (obj: any, tabDepth: number) => {
   let xml = '';
   for (let prop in obj) {
     let tabStr = '';
@@ -68,7 +68,7 @@ const objToXML = function (obj: any, tabDepth: number) {
         xml += tabStr;
         xml += '</' + prop + '>\n';
       }
-    } else if (typeof obj[prop] == 'object') {
+    } else if (typeof obj[prop] === 'object') {
       xml += tabStr;
       xml += '<' + prop + '>';
       xml += '\n';
@@ -279,7 +279,7 @@ export default class SignaturePad {
   public toBiometricData(): IBiometricSignatureRooted {
     // Compute only once
     this._pixelMm = pixelMm();
-    console.log(this._pixelMm);
+    // console.log(this._pixelMm);
     const biometricPoints = [];
     for (const line of this._data) {
       for (const point of line.points) {
