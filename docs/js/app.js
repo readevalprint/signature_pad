@@ -61,6 +61,20 @@ function download(dataURL, filename) {
   }
 }
 
+function copyTextAreaToClipboard() {
+  /* Get the text field */
+  var copyText = document.getElementById("last-data");
+
+  /* Select the text field */
+  copyText.select();
+
+  /* Copy the text inside the text field */
+  document.execCommand("copy");
+
+  /* Alert the copied text */
+  // alert("Copied the text: " + copyText.value);
+}
+
 // One could simply use Canvas#toBlob method instead, but it's just to show
 // that it can be done using result of SignaturePad#toDataURL.
 function dataURLToBlob(dataURL) {
@@ -101,15 +115,21 @@ changeColorButton.addEventListener("click", function (event) {
 });
 
 showDataButton.addEventListener("click", function (event) {
-  document.getElementById('last-data').value = JSON.stringify(signaturePad.toData())
+  console.log(signaturePad.toData());
+  document.getElementById('last-data').value = JSON.stringify(signaturePad.toData());
+  copyTextAreaToClipboard();
 });
 
 showBiometricDataButton.addEventListener("click", function (event) {
-  document.getElementById('last-data').value = JSON.stringify(signaturePad.toBiometricData())
+  console.log(signaturePad.toBiometricData());
+  document.getElementById('last-data').value = JSON.stringify(signaturePad.toBiometricData());
+  copyTextAreaToClipboard();
 });
 
 showBiometricXMLDataButton.addEventListener("click", function (event) {
-  document.getElementById('last-data').value = signaturePad.toBiometricXML(signaturePad.toBiometricData())
+  console.log(signaturePad.toBiometricXML(signaturePad.toBiometricData()));
+  document.getElementById('last-data').value = signaturePad.toBiometricXML(signaturePad.toBiometricData());
+  copyTextAreaToClipboard();
 });
 
 savePNGButton.addEventListener("click", function (event) {
