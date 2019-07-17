@@ -1,5 +1,5 @@
 /*!
- * Signature Pad v3.0.0-beta.4 | https://github.com/szimek/signature_pad
+ * Signature Pad v3.0.1 | https://github.com/szimek/signature_pad
  * (c) 2019 Szymon Nowak | Released under the MIT license
  */
 
@@ -143,42 +143,9 @@
       };
   }
 
-  var interfaceReplacementsMap = {
-      cx: 'cmn:X',
-      cy: 'cmn:Y',
-      tax: 'sig:TiltAlongX',
-      tay: 'sig:TiltAlongY',
-      pa: 'sig:PenAzimuth',
-      pe: 'sig:PenElevation',
-      pr: 'sig:PenRotation',
-      tc: 'sig:TimeChannel',
-      ptc: 'sig:PenTipCoord',
-      fc: 'sig:FChannel',
-      po: 'sig:PenOrient',
-      maj: 'cmn:Major',
-      min: 'cmn:Minor',
-      org: 'cmn:Organization',
-      ident: 'cmn:Identifier',
-      did: 'sig:DeviceID',
-      tec: 'sig:DeviceTechnology',
-      scVal: 'sig:ScalingValue',
-      minVal: 'sig:MinChannelValue',
-      maxVal: 'sig:MaxChannelValue',
-      sp: 'sig:SamplePoint',
-      dt: 'sig:CaptureDateAndTime',
-      dev: 'sig:CaptureDevice',
-      inc: 'sig:InclusionField',
-      cdl: 'sig:ChannelDescriptionList',
-      spl: 'sig:SamplePointList',
-      r: 'sig:Representation',
-      typecode: 'cmn:TypeCode',
-      data: 'cmn:Data',
-      v: 'sig:Version',
-      rl: 'sig:RepresentationList',
-      vsd: 'sig:VendorSpecificData',
-      root: 'sig:SignatureSignTimeSeries'
+  var round2Fixed = function (num) {
+      return Math.round(num * 100) / 100;
   };
-
   var pixelMm = function () {
       var div = document.createElement("div");
       div.style.height = "1000mm";
@@ -190,38 +157,6 @@
       var result = div.offsetHeight;
       document.body.removeChild(div);
       return 1 / result * 1000;
-  };
-  var objToXML = function (obj, tabDepth) {
-      var xml = '';
-      for (var prop in obj) {
-          var tabStr = '';
-          for (var i = 0; i < tabDepth; i++) {
-              tabStr += '\t';
-          }
-          if (obj[prop] instanceof Array) {
-              for (var array in obj[prop]) {
-                  xml += tabStr;
-                  xml += '<' + prop + '>\n';
-                  xml += objToXML(new Object(obj[prop][array]), tabDepth + 1);
-                  xml += tabStr;
-                  xml += '</' + prop + '>\n';
-              }
-          }
-          else if (typeof obj[prop] === 'object') {
-              xml += tabStr;
-              xml += '<' + prop + '>';
-              xml += '\n';
-              xml += objToXML(new Object(obj[prop]), tabDepth + 1);
-              xml += tabStr;
-          }
-          else {
-              xml += tabStr;
-              xml += '<' + prop + '>';
-              xml += obj[prop];
-          }
-          xml += obj[prop] instanceof Array ? '' : '</' + prop + '>\n';
-      }
-      return xml;
   };
   var SignaturePad = (function () {
       function SignaturePad(canvas, options) {
@@ -423,16 +358,16 @@
                   var biometricPoint = {
                       tc: point.time * this._timeScale / 1000,
                       ptc: {
-                          cx: point.x * this._pixelMm,
-                          cy: point.y * this._pixelMm
+                          cx: round2Fixed(point.x * this._pixelMm),
+                          cy: round2Fixed(point.y * this._pixelMm)
                       },
-                      fc: point.pressure * this._pressureScale,
+                      fc: Math.round(point.pressure * this._pressureScale),
                       po: {
-                          tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltX * this._angleScale,
-                          tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltY * this._angleScale,
-                          pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.azimuth * this._angleScale,
-                          pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.altitude * this._angleScale,
-                          pr: point.rotation * this._angleScale
+                          tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltX * this._angleScale),
+                          tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltY * this._angleScale),
+                          pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.azimuth * this._angleScale),
+                          pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.altitude * this._angleScale),
+                          pr: Math.round(point.rotation * this._angleScale)
                       }
                   };
                   if (!this.isTouch()) {
@@ -456,7 +391,7 @@
                                   org: 259,
                                   ident: this._clientInfo
                               },
-                              tec: this._pointerType
+                              tec: (this._pointerType === 'pen') ? 'Electromagnetic' : this._pointerType
                           },
                           inc: this._inclusionField().toString(16).toUpperCase(),
                           cdl: {
@@ -488,14 +423,6 @@
               }
           };
       };
-      SignaturePad.prototype.toBiometricXML = function (signatureData) {
-          var signatureDataString = JSON.stringify(signatureData);
-          for (var key in interfaceReplacementsMap) {
-              signatureDataString = signatureDataString.replace(new RegExp("\"" + key + "\":", 'g'), "\"" + interfaceReplacementsMap[key] + "\":");
-          }
-          var convertedSignatureData = JSON.parse(signatureDataString);
-          return objToXML(convertedSignatureData, 0);
-      };
       SignaturePad.prototype._inclusionField = function () {
           var inclusion = 0;
           inclusion += 32768;
@@ -525,7 +452,6 @@
               _this._clientInfo = JSON.stringify({
                   error: 'Could not get client info: ' + error.toString()
               });
-              console.log(error);
           });
       };
       SignaturePad.prototype._strokeBegin = function (event) {

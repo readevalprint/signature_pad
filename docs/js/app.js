@@ -7,7 +7,7 @@ var saveJPGButton = wrapper.querySelector("[data-action=save-jpg]");
 var saveSVGButton = wrapper.querySelector("[data-action=save-svg]");
 var showDataButton = wrapper.querySelector("[data-action=show-data]");
 var showBiometricDataButton = wrapper.querySelector("[data-action=show-biometric-data]");
-var showBiometricXMLDataButton = wrapper.querySelector("[data-action=show-biometric-xml-data]");
+// var showBiometricXMLDataButton = wrapper.querySelector("[data-action=show-biometric-xml-data]");
 var canvas = wrapper.querySelector("canvas");
 var signaturePad = new SignaturePad(canvas, {
   // It's Necessary to use an opaque color when saving image as JPEG;
@@ -126,11 +126,11 @@ showBiometricDataButton.addEventListener("click", function (event) {
   copyTextAreaToClipboard();
 });
 
-showBiometricXMLDataButton.addEventListener("click", function (event) {
-  console.log(signaturePad.toBiometricXML(signaturePad.toBiometricData()));
-  document.getElementById('last-data').value = signaturePad.toBiometricXML(signaturePad.toBiometricData());
-  copyTextAreaToClipboard();
-});
+// showBiometricXMLDataButton.addEventListener("click", function (event) {
+//   console.log(signaturePad.toBiometricXML(signaturePad.toBiometricData()));
+//   document.getElementById('last-data').value = signaturePad.toBiometricXML(signaturePad.toBiometricData());
+//   copyTextAreaToClipboard();
+// });
 
 savePNGButton.addEventListener("click", function (event) {
   if (signaturePad.isEmpty()) {

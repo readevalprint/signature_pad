@@ -12,7 +12,7 @@
 import {Bezier} from './bezier';
 import {IBasicPoint, Point} from './point';
 import {throttle} from './throttle';
-import {IBiometricPoint, IBiometricSignatureRooted, interfaceReplacementsMap} from './biometric';
+import {IBiometricPoint, IBiometricSignatureRooted} from './biometric';
 import axios from 'axios';
 
 declare global {
@@ -40,6 +40,10 @@ export interface IPointGroup {
   points: IBasicPoint[];
 }
 
+const round2Fixed = (num: number) => {
+  return Math.round(num * 100) / 100;
+};
+
 const pixelMm = () => {
   // Return the amount of millimeters each pixel needs to be multiplicated with
   const div = document.createElement("div");
@@ -54,36 +58,36 @@ const pixelMm = () => {
   return 1 / result * 1000;
 };
 
-const objToXML = (obj: any, tabDepth: number) => {
-  let xml = '';
-  for (let prop in obj) {
-    let tabStr = '';
-    for (let i = 0; i < tabDepth; i++) {
-      tabStr += '\t';
-    }
-    if (obj[prop] instanceof Array) {
-      for (let array in obj[prop]) {
-        xml += tabStr;
-        xml += '<' + prop + '>\n';
-        xml += objToXML(new Object(obj[prop][array]), tabDepth + 1);
-        xml += tabStr;
-        xml += '</' + prop + '>\n';
-      }
-    } else if (typeof obj[prop] === 'object') {
-      xml += tabStr;
-      xml += '<' + prop + '>';
-      xml += '\n';
-      xml += objToXML(new Object(obj[prop]), tabDepth + 1);
-      xml += tabStr;
-    } else {
-      xml += tabStr;
-      xml += '<' + prop + '>';
-      xml += obj[prop];
-    }
-    xml += obj[prop] instanceof Array ? '' : '</' + prop + '>\n';
-  }
-  return xml
-};
+// const objToXML = (obj: any, tabDepth: number) => {
+//   let xml = '';
+//   for (let prop in obj) {
+//     let tabStr = '';
+//     for (let i = 0; i < tabDepth; i++) {
+//       tabStr += '\t';
+//     }
+//     if (obj[prop] instanceof Array) {
+//       for (let array in obj[prop]) {
+//         xml += tabStr;
+//         xml += '<' + prop + '>\n';
+//         xml += objToXML(new Object(obj[prop][array]), tabDepth + 1);
+//         xml += tabStr;
+//         xml += '</' + prop + '>\n';
+//       }
+//     } else if (typeof obj[prop] === 'object') {
+//       xml += tabStr;
+//       xml += '<' + prop + '>';
+//       xml += '\n';
+//       xml += objToXML(new Object(obj[prop]), tabDepth + 1);
+//       xml += tabStr;
+//     } else {
+//       xml += tabStr;
+//       xml += '<' + prop + '>';
+//       xml += obj[prop];
+//     }
+//     xml += obj[prop] instanceof Array ? '' : '</' + prop + '>\n';
+//   }
+//   return xml
+// };
 
 export default class SignaturePad {
   // Public stuff
@@ -290,16 +294,16 @@ export default class SignaturePad {
         const biometricPoint: IBiometricPoint = {
           tc: point.time * this._timeScale / 1000,
           ptc: {
-            cx: point.x * this._pixelMm,
-            cy: point.y * this._pixelMm,
+            cx: round2Fixed(point.x * this._pixelMm),
+            cy: round2Fixed(point.y * this._pixelMm),
           },
-          fc: point.pressure * this._pressureScale,
+          fc: Math.round(point.pressure * this._pressureScale),
           po: {
-            tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltX * this._angleScale,
-            tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : point.tiltY * this._angleScale,
-            pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.azimuth * this._angleScale,
-            pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : point.altitude * this._angleScale,
-            pr: point.rotation * this._angleScale
+            tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltX * this._angleScale),
+            tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltY * this._angleScale),
+            pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.azimuth * this._angleScale),
+            pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.altitude * this._angleScale),
+            pr: Math.round(point.rotation * this._angleScale)
           }
         };
         if (!this.isTouch()) {
@@ -324,7 +328,7 @@ export default class SignaturePad {
                 org: 259,
                 ident: this._clientInfo
               },
-              tec: this._pointerType
+              tec: (this._pointerType === 'pen')  ? 'Electromagnetic' : this._pointerType,
             },
             inc: this._inclusionField().toString(16).toUpperCase(),
             cdl: {
@@ -357,14 +361,14 @@ export default class SignaturePad {
     };
   }
 
-  public toBiometricXML(signatureData: IBiometricSignatureRooted) {
-    let signatureDataString = JSON.stringify(signatureData);
-    for (const key in interfaceReplacementsMap) {
-      signatureDataString = signatureDataString.replace(new RegExp(`"${key}":`, 'g'), `"${interfaceReplacementsMap[key]}":`)
-    }
-    const convertedSignatureData = JSON.parse(signatureDataString);
-    return objToXML(convertedSignatureData, 0)
-  }
+  // public toBiometricXML(signatureData: IBiometricSignatureRooted) {
+  //   let signatureDataString = JSON.stringify(signatureData);
+  //   for (const key in interfaceReplacementsMap) {
+  //     signatureDataString = signatureDataString.replace(new RegExp(`"${key}":`, 'g'), `"${interfaceReplacementsMap[key]}":`)
+  //   }
+  //   const convertedSignatureData = JSON.parse(signatureDataString);
+  //   return objToXML(convertedSignatureData, 0)
+  // }
 
   private _inclusionField(): number {
     // X Y Z VX VY AX AY T DT F S TX TY A E R
@@ -403,7 +407,6 @@ export default class SignaturePad {
         this._clientInfo = JSON.stringify({
           error: 'Could not get client info: ' + error.toString()
         });
-        console.log(error);
       })
   }
 
