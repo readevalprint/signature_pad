@@ -203,6 +203,7 @@
           this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
           this.minWidth = options.minWidth || 0.5;
           this.maxWidth = options.maxWidth || 2.5;
+          this.svgstyle = options.svgstyle || "";
           this.throttle = ('throttle' in options ? options.throttle : 16);
           this.minDistance = ('minDistance' in options
               ? options.minDistance
@@ -355,8 +356,8 @@
           this._strokeUpdate(event);
       };
       SignaturePad.prototype._strokeUpdate = function (event) {
-          var x = event.clientX;
-          var y = event.clientY;
+          var x = event.clientX.toFixed(0);
+          var y = event.clientY.toFixed(0);
           var point = this._createPoint(x, y);
           var lastPointGroup = this._data[this._data.length - 1];
           var lastPoints = lastPointGroup ? lastPointGroup.points : [];
@@ -541,12 +542,12 @@
                   !isNaN(curve.control1.y) &&
                   !isNaN(curve.control2.x) &&
                   !isNaN(curve.control2.y)) {
-                  var attr = "M " + curve.startPoint.x.toFixed(3) + "," + curve.startPoint.y.toFixed(3) + " " +
-                      ("C " + curve.control1.x.toFixed(3) + "," + curve.control1.y.toFixed(3) + " ") +
-                      (curve.control2.x.toFixed(3) + "," + curve.control2.y.toFixed(3) + " ") +
-                      (curve.endPoint.x.toFixed(3) + "," + curve.endPoint.y.toFixed(3));
+                  var attr = "M " + curve.startPoint.x.toFixed(0) + "," + curve.startPoint.y.toFixed(0) + " " +
+                      ("C " + curve.control1.x.toFixed(0) + "," + curve.control1.y.toFixed(0) + " ") +
+                      (curve.control2.x.toFixed(0) + "," + curve.control2.y.toFixed(0) + " ") +
+                      (curve.endPoint.x.toFixed(0) + "," + curve.endPoint.y.toFixed(0));
                   path.setAttribute('d', attr);
-                  path.setAttribute('stroke-width', (curve.endWidth * 2.25).toFixed(3));
+                  path.setAttribute('stroke-width', (curve.endWidth * 2.25).toFixed(4));
                   path.setAttribute('stroke', color);
                   path.setAttribute('fill', 'none');
                   path.setAttribute('stroke-linecap', 'round');
@@ -581,7 +582,15 @@
               body = dummy.innerHTML;
           }
           var footer = '</svg>';
-          var data = header + body + footer;
+          var style = '';
+          if (this.svgstyle) {
+              var styletag = document.createElement('style');
+              styletag.type = 'text/css';
+              styletag.appendChild(document.createTextNode(this.svgstyle));
+              svg.appendChild(styletag);
+              style = "<style>" + styletag.innerHTML + "</style>";
+          }
+          var data = header + body + style + footer;
           return prefix + btoa(data);
       };
       return SignaturePad;

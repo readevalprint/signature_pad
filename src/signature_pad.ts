@@ -32,6 +32,7 @@ export interface IOptions {
   velocityFilterWeight?: number;
   onBegin?: (event: any) => void;
   onEnd?: (event: any) => void;
+  svgstyle?: string;
 }
 
 export interface IPointGroup {
@@ -100,6 +101,7 @@ export default class SignaturePad {
   public velocityFilterWeight: number;
   public onBegin?: (event: any) => void;
   public onEnd?: (event: any) => void;
+  public svgstyle?: string;
 
   // Private stuff
   /* tslint:disable: variable-name */
@@ -133,6 +135,7 @@ export default class SignaturePad {
     this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
     this.minWidth = options.minWidth || 0.5;
     this.maxWidth = options.maxWidth || 2.5;
+    this.svgstyle = options.svgstyle || "";
     this.throttle = ('throttle' in options ? options.throttle : 16) as number; // in milliseconds
     this.minDistance = ('minDistance' in options
       ? options.minDistance
@@ -410,8 +413,8 @@ export default class SignaturePad {
   }
 
   private _strokeUpdate(event: any): void {
-    const x = event.clientX;
-    const y = event.clientY;
+    const x = event.clientX.toFixed(0);
+    const y = event.clientY.toFixed(0);
 
     const point = this._createPoint(x, y);
     const lastPointGroup = this._data[this._data.length - 1];
@@ -682,14 +685,12 @@ export default class SignaturePad {
           !isNaN(curve.control2.y)
         ) {
           const attr =
-            `M ${curve.startPoint.x.toFixed(3)},${curve.startPoint.y.toFixed(
-              3,
-            )} ` +
-            `C ${curve.control1.x.toFixed(3)},${curve.control1.y.toFixed(3)} ` +
-            `${curve.control2.x.toFixed(3)},${curve.control2.y.toFixed(3)} ` +
-            `${curve.endPoint.x.toFixed(3)},${curve.endPoint.y.toFixed(3)}`;
+            `M ${curve.startPoint.x.toFixed(0)},${curve.startPoint.y.toFixed( 0,)} ` +
+            `C ${curve.control1.x.toFixed(0)},${curve.control1.y.toFixed(0)} ` +
+            `${curve.control2.x.toFixed(0)},${curve.control2.y.toFixed(0)} ` +
+            `${curve.endPoint.x.toFixed(0)},${curve.endPoint.y.toFixed(0)}`;
           path.setAttribute('d', attr);
-          path.setAttribute('stroke-width', (curve.endWidth * 2.25).toFixed(3));
+          path.setAttribute('stroke-width', (curve.endWidth * 2.25).toFixed(4));
           path.setAttribute('stroke', color);
           path.setAttribute('fill', 'none');
           path.setAttribute('stroke-linecap', 'round');
@@ -739,7 +740,15 @@ export default class SignaturePad {
     }
 
     const footer = '</svg>';
-    const data = header + body + footer;
+    let style = '';
+    if (this.svgstyle) {
+      const styletag = document.createElement('style');
+      styletag.type = 'text/css';
+      styletag.appendChild(document.createTextNode(this.svgstyle)); // Support for the rest
+      svg.appendChild(styletag);
+        style = "<style>" + styletag.innerHTML + "</style>"
+    }
+    const data = header + body + style + footer;
 
     return prefix + btoa(data);
   }
