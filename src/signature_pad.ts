@@ -9,9 +9,11 @@
  * http://www.lemoda.net/maths/bezier-length/index.html
  */
 
-import { Bezier } from './bezier';
-import { IBasicPoint, Point } from './point';
-import { throttle } from './throttle';
+import {Bezier} from './bezier';
+import {IBasicPoint, Point} from './point';
+import {throttle} from './throttle';
+import {IBiometricPoint, IBiometricSignatureRooted} from './biometric';
+import axios from 'axios';
 
 declare global {
   // tslint:disable-next-line:interface-name
@@ -29,14 +31,63 @@ export interface IOptions {
   penColor?: string;
   throttle?: number;
   velocityFilterWeight?: number;
-  onBegin?: (event: MouseEvent | Touch) => void;
-  onEnd?: (event: MouseEvent | Touch) => void;
+  onBegin?: (event: any) => void;
+  onEnd?: (event: any) => void;
 }
 
 export interface IPointGroup {
   color: string;
   points: IBasicPoint[];
 }
+
+const round2Fixed = (num: number) => {
+  return Math.round(num * 100) / 100;
+};
+
+const pixelMm = () => {
+  // Return the amount of millimeters each pixel needs to be multiplicated with
+  const div = document.createElement("div");
+  div.style.height = "1000mm";
+  div.style.width = "1000mm";
+  div.style.top = "-100%";
+  div.style.left = "-100%";
+  div.style.position = "absolute";
+  document.body.appendChild(div);
+  const result = div.offsetHeight;
+  document.body.removeChild(div);
+  return 1 / result * 1000;
+};
+
+// const objToXML = (obj: any, tabDepth: number) => {
+//   let xml = '';
+//   for (let prop in obj) {
+//     let tabStr = '';
+//     for (let i = 0; i < tabDepth; i++) {
+//       tabStr += '\t';
+//     }
+//     if (obj[prop] instanceof Array) {
+//       for (let array in obj[prop]) {
+//         xml += tabStr;
+//         xml += '<' + prop + '>\n';
+//         xml += objToXML(new Object(obj[prop][array]), tabDepth + 1);
+//         xml += tabStr;
+//         xml += '</' + prop + '>\n';
+//       }
+//     } else if (typeof obj[prop] === 'object') {
+//       xml += tabStr;
+//       xml += '<' + prop + '>';
+//       xml += '\n';
+//       xml += objToXML(new Object(obj[prop]), tabDepth + 1);
+//       xml += tabStr;
+//     } else {
+//       xml += tabStr;
+//       xml += '<' + prop + '>';
+//       xml += obj[prop];
+//     }
+//     xml += obj[prop] instanceof Array ? '' : '</' + prop + '>\n';
+//   }
+//   return xml
+// };
 
 export default class SignaturePad {
   // Public stuff
@@ -48,8 +99,8 @@ export default class SignaturePad {
   public penColor: string;
   public throttle: number;
   public velocityFilterWeight: number;
-  public onBegin?: (event: MouseEvent | Touch) => void;
-  public onEnd?: (event: MouseEvent | Touch) => void;
+  public onBegin?: (event: any) => void;
+  public onEnd?: (event: any) => void;
 
   // Private stuff
   /* tslint:disable: variable-name */
@@ -58,9 +109,24 @@ export default class SignaturePad {
   private _isEmpty: boolean;
   private _lastPoints: Point[]; // Stores up to 4 most recent points; used to generate a new curve
   private _data: IPointGroup[]; // Stores all points in groups (one group per line or dot)
+  private _pointerType: string; // mouse, pen, touch
+
+  // Related to biometric signature
+  private _pixelMm: number; // Amount of space in mm taken by a single pixel
+  private _timeLastPoint: number; // Time of start
+  private _time: number; // Time
+  private _datetimeStarted: string;
+  private _angleScale: number = 1000; // Angle scaling value
+  private _timeScale: number = 1000; // Time scaling value
+  private _pressureScale: number = 1000; // Pressure scaling value
+  private _clientInfo: string = '';
+  // private _pointerId: number = 0;
+
   private _lastVelocity: number;
   private _lastWidth: number;
-  private _strokeMoveUpdate: (event: MouseEvent | Touch) => void;
+  private _whichEvent: number; // 1: pointer  2: mouse  3: touch
+  private _strokeMoveUpdate: (event: any) => void;
+
   /* tslint:enable: variable-name */
 
   constructor(
@@ -70,7 +136,7 @@ export default class SignaturePad {
     this.velocityFilterWeight = options.velocityFilterWeight || 0.7;
     this.minWidth = options.minWidth || 0.5;
     this.maxWidth = options.maxWidth || 2.5;
-    this.throttle = ('throttle' in options ? options.throttle : 16) as number; // in milisecondss
+    this.throttle = ('throttle' in options ? options.throttle : 16) as number; // in milliseconds
     this.minDistance = ('minDistance' in options
       ? options.minDistance
       : 5) as number; // in pixels
@@ -97,6 +163,9 @@ export default class SignaturePad {
     this._ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
     this.clear();
 
+    // Fetch client information to include in the biometric signature
+    this._fetchClientInfo();
+
     // Enable mouse and touch event handlers
     this.on();
   }
@@ -111,6 +180,8 @@ export default class SignaturePad {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     this._data = [];
+    this._timeLastPoint = -1;
+    this._datetimeStarted = new Date().toISOString();
     this._reset();
     this._isEmpty = true;
   }
@@ -135,7 +206,7 @@ export default class SignaturePad {
     };
     image.onerror = (error) => {
       if (callback) {
-        callback(error);
+        callback(error as ErrorEvent);
       }
     };
     image.src = dataUrl;
@@ -144,12 +215,18 @@ export default class SignaturePad {
   }
 
   public toDataURL(type = 'image/png', encoderOptions?: number) {
-    switch (type) {
-      case 'image/svg+xml':
-        return this._toSVG();
-      default:
-        return this.canvas.toDataURL(type, encoderOptions);
+    if (type === 'image/svg+xml') {
+      return this._toSVG();
+    } else {
+      return this.canvas.toDataURL(type, encoderOptions);
     }
+  }
+
+  public isTouch(): boolean {
+    if ('ontouchstart' in window) {
+      return true;
+    }
+    return false;
   }
 
   public on(): void {
@@ -159,11 +236,13 @@ export default class SignaturePad {
 
     if (window.PointerEvent) {
       this._handlePointerEvents();
+      this._whichEvent = 1;
     } else {
       this._handleMouseEvents();
-
+      this._whichEvent = 2;
       if ('ontouchstart' in window) {
         this._handleTouchEvents();
+        this._whichEvent = 3;
       }
     }
   }
@@ -173,9 +252,9 @@ export default class SignaturePad {
     this.canvas.style.touchAction = 'auto';
     this.canvas.style.msTouchAction = 'auto';
 
-    this.canvas.removeEventListener('pointerdown', this._handleMouseDown);
-    this.canvas.removeEventListener('pointermove', this._handleMouseMove);
-    document.removeEventListener('pointerup', this._handleMouseUp);
+    this.canvas.removeEventListener('pointerdown', this._handlePointerDown);
+    this.canvas.removeEventListener('pointermove', this._handlePointerMove);
+    document.removeEventListener('pointerup', this._handlePointerUp);
 
     this.canvas.removeEventListener('mousedown', this._handleMouseDown);
     this.canvas.removeEventListener('mousemove', this._handleMouseMove);
@@ -195,8 +274,8 @@ export default class SignaturePad {
 
     this._fromData(
       pointGroups,
-      ({ color, curve }) => this._drawCurve({ color, curve }),
-      ({ color, point }) => this._drawDot({ color, point }),
+      ({color, curve}) => this._drawCurve({color, curve}),
+      ({color, point}) => this._drawDot({color, point}),
     );
 
     this._data = pointGroups;
@@ -206,10 +285,158 @@ export default class SignaturePad {
     return this._data;
   }
 
+  public toBiometricData(): IBiometricSignatureRooted {
+    // Compute only once
+    this._pixelMm = pixelMm();
+    const biometricPoints = [];
+    for (const line of this._data) {
+      for (const point of line.points) {
+        const biometricPoint: IBiometricPoint = {
+          tc: point.time * this._timeScale / 1000,
+          ptc: {
+            cx: round2Fixed(point.x * this._pixelMm),
+            cy: round2Fixed(point.y * this._pixelMm),
+          },
+          fc: Math.round(point.pressure * this._pressureScale),
+          po: {
+            tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltX * this._angleScale),
+            tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltY * this._angleScale),
+            pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.azimuth * this._angleScale),
+            pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.altitude * this._angleScale),
+            pr: Math.round(point.rotation * this._angleScale)
+          }
+        };
+        if (!this.isTouch()) {
+          delete biometricPoint.fc;
+          delete biometricPoint.po;
+        }
+        biometricPoints.push(biometricPoint);
+      }
+    }
+
+    return {
+      root: {
+        v: {
+          maj: 1,
+          min: 0
+        },
+        rl: {
+          r: {
+            dt: this._datetimeStarted,
+            dev: {
+              did: {
+                org: 259,
+                ident: this._clientInfo
+              },
+              tec: (this._pointerType === 'pen')  ? 'Electromagnetic' : this._pointerType,
+            },
+            inc: this._inclusionField().toString(16).toUpperCase(),
+            cdl: {
+              'sig:PenTipOrientationChannelDescription': {
+                scVal: this._angleScale,
+                minVal: 0,
+                maxVal: 90 * this._angleScale
+              },
+              'sig:TChannelDescription': {
+                scVal: this._timeScale,
+                minVal: 0,
+                maxVal: this._time * this._timeScale
+              },
+              'sig:FChannelDescription': {
+                scVal: this._pressureScale,
+                minVal: 0,
+                maxVal: this._pressureScale
+              }
+            },
+            spl: {
+              sp: biometricPoints
+            }
+          }
+        },
+        vsd: {
+          typecode: 1,
+          data: ''
+        }
+      }
+    };
+  }
+
+  // public toBiometricXML(signatureData: IBiometricSignatureRooted) {
+  //   let signatureDataString = JSON.stringify(signatureData);
+  //   for (const key in interfaceReplacementsMap) {
+  //     signatureDataString = signatureDataString.replace(new RegExp(`"${key}":`, 'g'), `"${interfaceReplacementsMap[key]}":`)
+  //   }
+  //   const convertedSignatureData = JSON.parse(signatureDataString);
+  //   return objToXML(convertedSignatureData, 0)
+  // }
+
+  private _inclusionField(): number {
+    // X Y Z VX VY AX AY T DT F S TX TY A E R
+    let inclusion = 0;
+    inclusion += 0b1000000000000000; // x
+    inclusion += 0b0100000000000000; // y
+    // inclusion += 0b0010000000000000; // z
+    // inclusion += 0b0001000000000000; // VX
+    // inclusion += 0b0000100000000000; // VY
+    // inclusion += 0b0000010000000000; // AX
+    // inclusion += 0b0000001000000000; // AY
+    inclusion += 0b0000000100000000; // time
+    // inclusion += 0b0000000010000000; // duration time
+    inclusion += 0b0000000000100000; // scale
+    if (this.isTouch()) {
+      inclusion += 0b0000000001000000; // pressure
+      if (this._whichEvent === 1) {
+        inclusion += 0b0000000000010000; // tiltX
+        inclusion += 0b0000000000001000; // tiltY
+      } else {
+        inclusion += 0b0000000000000100; // azimuth
+        inclusion += 0b0000000000000010; // elevation
+      }
+      inclusion += 0b0000000000000001; // rotation
+    }
+    return inclusion;
+  }
+
+  private _fetchClientInfo(): void {
+    axios.get('https://idana-development.appspot.com/api/public/info')
+      .then((response) => {
+        this._clientInfo = JSON.stringify(response.data)
+      })
+      .catch((error) => {
+        // handle error
+        this._clientInfo = JSON.stringify({
+          error: 'Could not get client info: ' + error.toString()
+        });
+      })
+  }
+
   // Event handlers
+  private _handlePointerDown = (event: PointerEvent): void => {
+    if (event.which === 1) {
+      this._mouseButtonDown = true;
+      this._pointerType = event.pointerType;
+      // this._pointerId = event.pointerId;
+      this._strokeBegin(event);
+    }
+  };
+
+  private _handlePointerMove = (event: PointerEvent): void => {
+    if (this._mouseButtonDown) {
+      this._strokeMoveUpdate(event);
+    }
+  };
+
+  private _handlePointerUp = (event: PointerEvent): void => {
+    if (event.which === 1 && this._mouseButtonDown) {
+      this._mouseButtonDown = false;
+      this._strokeEnd(event);
+    }
+  };
+
   private _handleMouseDown = (event: MouseEvent): void => {
     if (event.which === 1) {
       this._mouseButtonDown = true;
+      this._pointerType = 'mouse';
       this._strokeBegin(event);
     }
   };
@@ -227,12 +454,13 @@ export default class SignaturePad {
     }
   };
 
-  private _handleTouchStart = (event: TouchEvent): void => {
+  private _handleTouchStart = (event: any): void => {
     // Prevent scrolling.
     event.preventDefault();
 
     if (event.targetTouches.length === 1) {
       const touch = event.changedTouches[0];
+      this._pointerType = touch.touchType;
       this._strokeBegin(touch);
     }
   };
@@ -256,10 +484,10 @@ export default class SignaturePad {
   };
 
   // Private methods
-  private _strokeBegin(event: MouseEvent | Touch): void {
+  private _strokeBegin(event: any): void {
     const newPointGroup = {
       color: this.penColor,
-      points: [],
+      points: []
     };
 
     if (typeof this.onBegin === 'function') {
@@ -271,39 +499,68 @@ export default class SignaturePad {
     this._strokeUpdate(event);
   }
 
-  private _strokeUpdate(event: MouseEvent | Touch): void {
+  private _strokeUpdate(event: any): void {
     const x = event.clientX;
     const y = event.clientY;
 
     const point = this._createPoint(x, y);
     const lastPointGroup = this._data[this._data.length - 1];
-    const lastPoints = lastPointGroup.points;
+    const lastPoints = lastPointGroup ? lastPointGroup.points : [];
     const lastPoint =
       lastPoints.length > 0 && lastPoints[lastPoints.length - 1];
     const isLastPointTooClose = lastPoint
       ? point.distanceTo(lastPoint) <= this.minDistance
       : false;
-    const color = lastPointGroup.color;
+    const color = lastPointGroup ? lastPointGroup.color : this.penColor;
 
     // Skip this point if it's too close to the previous one
     if (!lastPoint || !(lastPoint && isLastPointTooClose)) {
       const curve = this._addPoint(point);
 
       if (!lastPoint) {
-        this._drawDot({ color, point });
+        this._drawDot({color, point});
       } else if (curve) {
-        this._drawCurve({ color, curve });
+        this._drawCurve({color, curve});
       }
 
-      lastPoints.push({
-        time: point.time,
+      const d = new Date();
+      if (this._timeLastPoint < 0) {
+        this._timeLastPoint = d.getTime();
+        this._time = 0;
+      } else {
+        this._time = d.getTime() - this._timeLastPoint;
+      }
+
+      const pt = {
+        altitude: -1,
+        azimuth: -1,
+        pressure: -1,
+        rotation: -1,
+        time: point.time - this._timeLastPoint,
         x: point.x,
         y: point.y,
-      });
+        tiltX: this._whichEvent === 1 ? event.tiltX : -1,
+        tiltY: this._whichEvent === 1 ? event.tiltY : -1
+      };
+
+      if (this.isTouch()) {
+        if (this._whichEvent === 1) {
+          pt.pressure = event.pressure;
+          pt.rotation = event.twist;
+          pt.tiltX = event.tiltX;
+          pt.tiltY = event.tiltY;
+        } else {
+          pt.pressure = event.force;
+          pt.rotation = event.rotationAngle;
+          pt.altitude = event.altitudeAngle;
+          pt.azimuth = event.azimuthAngle;
+        }
+      }
+      lastPoints.push(pt);
     }
   }
 
-  private _strokeEnd(event: MouseEvent | Touch): void {
+  private _strokeEnd(event: any): void {
     this._strokeUpdate(event);
 
     if (typeof this.onEnd === 'function') {
@@ -314,9 +571,9 @@ export default class SignaturePad {
   private _handlePointerEvents(): void {
     this._mouseButtonDown = false;
 
-    this.canvas.addEventListener('pointerdown', this._handleMouseDown);
-    this.canvas.addEventListener('pointermove', this._handleMouseMove);
-    document.addEventListener('pointerup', this._handleMouseUp);
+    this.canvas.addEventListener('pointerdown', this._handlePointerDown);
+    this.canvas.addEventListener('pointermove', this._handlePointerMove);
+    document.addEventListener('pointerup', this._handlePointerUp);
   }
 
   private _handleMouseEvents(): void {
@@ -349,7 +606,7 @@ export default class SignaturePad {
 
   // Add point to _lastPoints array and generate a new curve if there are enough points (i.e. 3)
   private _addPoint(point: Point): Bezier | null {
-    const { _lastPoints } = this;
+    const {_lastPoints} = this;
 
     _lastPoints.push(point);
 
@@ -406,7 +663,7 @@ export default class SignaturePad {
     this._isEmpty = false;
   }
 
-  private _drawCurve({ color, curve }: { color: string; curve: Bezier }): void {
+  private _drawCurve({color, curve}: { color: string; curve: Bezier }): void {
     const ctx = this._ctx;
     const widthDelta = curve.endWidth - curve.startWidth;
     // '2' is just an arbitrary number here. If only lenght is used, then
@@ -444,9 +701,9 @@ export default class SignaturePad {
   }
 
   private _drawDot({
-    color,
-    point,
-  }: {
+                     color,
+                     point,
+                   }: {
     color: string;
     point: IBasicPoint;
   }): void {
@@ -467,7 +724,7 @@ export default class SignaturePad {
     drawDot: SignaturePad['_drawDot'],
   ): void {
     for (const group of pointGroups) {
-      const { color, points } = group;
+      const {color, points} = group;
 
       if (points.length > 1) {
         for (let j = 0; j < points.length; j += 1) {
@@ -485,7 +742,7 @@ export default class SignaturePad {
           const curve = this._addPoint(point);
 
           if (curve) {
-            drawCurve({ color, curve });
+            drawCurve({color, curve});
           }
         }
       } else {
@@ -501,11 +758,11 @@ export default class SignaturePad {
 
   private _toSVG(): string {
     const pointGroups = this._data;
-    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    // const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    // const maxX = this.canvas.width / ratio;
+    // const maxY = this.canvas.height / ratio;
     const minX = 0;
     const minY = 0;
-    const maxX = this.canvas.width / ratio;
-    const maxY = this.canvas.height / ratio;
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 
     svg.setAttribute('width', this.canvas.width.toString());
@@ -514,7 +771,7 @@ export default class SignaturePad {
     this._fromData(
       pointGroups,
 
-      ({ color, curve }: { color: string; curve: Bezier }) => {
+      ({color, curve}: { color: string; curve: Bezier }) => {
         const path = document.createElement('path');
 
         // Need to check curve for NaN values, these pop up when drawing
@@ -545,7 +802,7 @@ export default class SignaturePad {
         /* eslint-enable no-restricted-globals */
       },
 
-      ({ color, point }: { color: string; point: IBasicPoint }) => {
+      ({color, point}: { color: string; point: IBasicPoint }) => {
         const circle = document.createElement('circle');
         const dotSize =
           typeof this.dotSize === 'function' ? this.dotSize() : this.dotSize;
@@ -563,13 +820,14 @@ export default class SignaturePad {
       '<svg' +
       ' xmlns="http://www.w3.org/2000/svg"' +
       ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
-      ` viewBox="${minX} ${minY} ${maxX} ${maxY}"` +
-      ` width="${maxX}"` +
-      ` height="${maxY}"` +
+      ` viewBox="${minX} ${minY} ${this.canvas.width} ${this.canvas.height}"` +
+      ` width="${this.canvas.width}"` +
+      ` height="${this.canvas.height}"` +
       '>';
     let body = svg.innerHTML;
 
     // IE hack for missing innerHTML property on SVGElement
+    // noinspection TypeScriptValidateTypes
     if (body === undefined) {
       const dummy = document.createElement('dummy');
       const nodes = svg.childNodes;

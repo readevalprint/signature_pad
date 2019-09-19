@@ -1,7 +1,7 @@
 {
-  "name": "signature_pad",
+  "name": "@tomesgmbh/signature_pad",
   "description": "Library for drawing smooth signatures.",
-  "version": "3.0.0-beta.3",
+  "version": "3.0.1",
   "homepage": "https://github.com/szimek/signature_pad",
   "author": {
     "name": "Szymon Nowak",
@@ -12,7 +12,7 @@
   "source": "src/signature_pad.ts",
   "dev:main": "dist/signature_pad.js",
   "main": "dist/signature_pad.min.js",
-  "module": "dist/signature_pad.m.js",
+  "module": "dist/signature_pad.mjs",
   "umd:main": "dist/signature_pad.umd.js",
   "types": "dist/types/signature_pad.d.ts",
   "scripts": {
@@ -79,5 +79,8 @@
     "transform": {
       "^.+\\.tsx?$": "ts-jest"
     }
+  },
+  "dependencies": {
+    "axios": "^0.19.0"
   }
 }

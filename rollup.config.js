@@ -31,6 +31,7 @@ export default [
         },
       })
     ],
+    external: [ 'axios' ],
     output: {
       file: 'dist/signature_pad.js',
       format: 'cjs',
@@ -49,6 +50,7 @@ export default [
       }),
       terser()
     ],
+    external: [ 'axios' ],
     output: {
       file: 'dist/signature_pad.min.js',
       format: 'cjs',
@@ -66,6 +68,7 @@ export default [
         },
       }),
     ],
+    external: [ 'axios' ],
     output: {
       file: 'dist/signature_pad.umd.js',
       format: 'umd',
@@ -85,6 +88,7 @@ export default [
       }),
       terser()
     ],
+    external: [ 'axios' ],
     output: {
       file: 'dist/signature_pad.umd.min.js',
       format: 'umd',
@@ -104,8 +108,9 @@ export default [
         },
       }),
     ],
+    external: [ 'axios' ],
     output: {
-      file: 'dist/signature_pad.m.js',
+      file: 'dist/signature_pad.mjs',
       format: 'es',
       banner,
     },
@@ -122,8 +127,9 @@ export default [
       }),
       terser(),
     ],
+    external: [ 'axios' ],
     output: {
-      file: 'dist/signature_pad.m.min.js',
+      file: 'dist/signature_pad.min.mjs',
       format: 'es',
       banner,
     },

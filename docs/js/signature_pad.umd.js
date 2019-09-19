@@ -1,19 +1,27 @@
 /*!
- * Signature Pad v3.0.0-beta.3 | https://github.com/szimek/signature_pad
- * (c) 2018 Szymon Nowak | Released under the MIT license
+ * Signature Pad v3.0.1 | https://github.com/szimek/signature_pad
+ * (c) 2019 Szymon Nowak | Released under the MIT license
  */
 
 (function (global, factory) {
-  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
-  typeof define === 'function' && define.amd ? define(factory) :
-  (global.SignaturePad = factory());
-}(this, (function () { 'use strict';
+  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('axios')) :
+  typeof define === 'function' && define.amd ? define(['axios'], factory) :
+  (global.SignaturePad = factory(global.axios));
+}(this, (function (axios) { 'use strict';
+
+  axios = axios && axios.hasOwnProperty('default') ? axios['default'] : axios;
 
   var Point = (function () {
-      function Point(x, y, time) {
+      function Point(x, y, time, pressure) {
           this.x = x;
           this.y = y;
           this.time = time || Date.now();
+          this.pressure = pressure || -1;
+          this.rotation = 0;
+          this.tiltX = 0;
+          this.tiltY = 0;
+          this.altitude = 0;
+          this.azimuth = 0;
       }
       Point.prototype.distanceTo = function (start) {
           return Math.sqrt(Math.pow(this.x - start.x, 2) + Math.pow(this.y - start.y, 2));
@@ -135,15 +143,53 @@
       };
   }
 
+  var round2Fixed = function (num) {
+      return Math.round(num * 100) / 100;
+  };
+  var pixelMm = function () {
+      var div = document.createElement("div");
+      div.style.height = "1000mm";
+      div.style.width = "1000mm";
+      div.style.top = "-100%";
+      div.style.left = "-100%";
+      div.style.position = "absolute";
+      document.body.appendChild(div);
+      var result = div.offsetHeight;
+      document.body.removeChild(div);
+      return 1 / result * 1000;
+  };
   var SignaturePad = (function () {
       function SignaturePad(canvas, options) {
           if (options === void 0) { options = {}; }
           var _this = this;
           this.canvas = canvas;
           this.options = options;
+          this._angleScale = 1000;
+          this._timeScale = 1000;
+          this._pressureScale = 1000;
+          this._clientInfo = '';
+          this._handlePointerDown = function (event) {
+              if (event.which === 1) {
+                  _this._mouseButtonDown = true;
+                  _this._pointerType = event.pointerType;
+                  _this._strokeBegin(event);
+              }
+          };
+          this._handlePointerMove = function (event) {
+              if (_this._mouseButtonDown) {
+                  _this._strokeMoveUpdate(event);
+              }
+          };
+          this._handlePointerUp = function (event) {
+              if (event.which === 1 && _this._mouseButtonDown) {
+                  _this._mouseButtonDown = false;
+                  _this._strokeEnd(event);
+              }
+          };
           this._handleMouseDown = function (event) {
               if (event.which === 1) {
                   _this._mouseButtonDown = true;
+                  _this._pointerType = 'mouse';
                   _this._strokeBegin(event);
               }
           };
@@ -162,6 +208,7 @@
               event.preventDefault();
               if (event.targetTouches.length === 1) {
                   var touch = event.changedTouches[0];
+                  _this._pointerType = touch.touchType;
                   _this._strokeBegin(touch);
               }
           };
@@ -202,6 +249,7 @@
           this.onEnd = options.onEnd;
           this._ctx = canvas.getContext('2d');
           this.clear();
+          this._fetchClientInfo();
           this.on();
       }
       SignaturePad.prototype.clear = function () {
@@ -211,6 +259,8 @@
           ctx.clearRect(0, 0, canvas.width, canvas.height);
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           this._data = [];
+          this._timeLastPoint = -1;
+          this._datetimeStarted = new Date().toISOString();
           this._reset();
           this._isEmpty = true;
       };
@@ -238,32 +288,41 @@
       };
       SignaturePad.prototype.toDataURL = function (type, encoderOptions) {
           if (type === void 0) { type = 'image/png'; }
-          switch (type) {
-              case 'image/svg+xml':
-                  return this._toSVG();
-              default:
-                  return this.canvas.toDataURL(type, encoderOptions);
+          if (type === 'image/svg+xml') {
+              return this._toSVG();
           }
+          else {
+              return this.canvas.toDataURL(type, encoderOptions);
+          }
+      };
+      SignaturePad.prototype.isTouch = function () {
+          if ('ontouchstart' in window) {
+              return true;
+          }
+          return false;
       };
       SignaturePad.prototype.on = function () {
           this.canvas.style.touchAction = 'none';
           this.canvas.style.msTouchAction = 'none';
           if (window.PointerEvent) {
               this._handlePointerEvents();
+              this._whichEvent = 1;
           }
           else {
               this._handleMouseEvents();
+              this._whichEvent = 2;
               if ('ontouchstart' in window) {
                   this._handleTouchEvents();
+                  this._whichEvent = 3;
               }
           }
       };
       SignaturePad.prototype.off = function () {
           this.canvas.style.touchAction = 'auto';
           this.canvas.style.msTouchAction = 'auto';
-          this.canvas.removeEventListener('pointerdown', this._handleMouseDown);
-          this.canvas.removeEventListener('pointermove', this._handleMouseMove);
-          document.removeEventListener('pointerup', this._handleMouseUp);
+          this.canvas.removeEventListener('pointerdown', this._handlePointerDown);
+          this.canvas.removeEventListener('pointermove', this._handlePointerMove);
+          document.removeEventListener('pointerup', this._handlePointerUp);
           this.canvas.removeEventListener('mousedown', this._handleMouseDown);
           this.canvas.removeEventListener('mousemove', this._handleMouseMove);
           document.removeEventListener('mouseup', this._handleMouseUp);
@@ -289,6 +348,112 @@
       SignaturePad.prototype.toData = function () {
           return this._data;
       };
+      SignaturePad.prototype.toBiometricData = function () {
+          this._pixelMm = pixelMm();
+          var biometricPoints = [];
+          for (var _i = 0, _a = this._data; _i < _a.length; _i++) {
+              var line = _a[_i];
+              for (var _b = 0, _c = line.points; _b < _c.length; _b++) {
+                  var point = _c[_b];
+                  var biometricPoint = {
+                      tc: point.time * this._timeScale / 1000,
+                      ptc: {
+                          cx: round2Fixed(point.x * this._pixelMm),
+                          cy: round2Fixed(point.y * this._pixelMm)
+                      },
+                      fc: Math.round(point.pressure * this._pressureScale),
+                      po: {
+                          tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltX * this._angleScale),
+                          tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltY * this._angleScale),
+                          pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.azimuth * this._angleScale),
+                          pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.altitude * this._angleScale),
+                          pr: Math.round(point.rotation * this._angleScale)
+                      }
+                  };
+                  if (!this.isTouch()) {
+                      delete biometricPoint.fc;
+                      delete biometricPoint.po;
+                  }
+                  biometricPoints.push(biometricPoint);
+              }
+          }
+          return {
+              root: {
+                  v: {
+                      maj: 1,
+                      min: 0
+                  },
+                  rl: {
+                      r: {
+                          dt: this._datetimeStarted,
+                          dev: {
+                              did: {
+                                  org: 259,
+                                  ident: this._clientInfo
+                              },
+                              tec: (this._pointerType === 'pen') ? 'Electromagnetic' : this._pointerType
+                          },
+                          inc: this._inclusionField().toString(16).toUpperCase(),
+                          cdl: {
+                              'sig:PenTipOrientationChannelDescription': {
+                                  scVal: this._angleScale,
+                                  minVal: 0,
+                                  maxVal: 90 * this._angleScale
+                              },
+                              'sig:TChannelDescription': {
+                                  scVal: this._timeScale,
+                                  minVal: 0,
+                                  maxVal: this._time * this._timeScale
+                              },
+                              'sig:FChannelDescription': {
+                                  scVal: this._pressureScale,
+                                  minVal: 0,
+                                  maxVal: this._pressureScale
+                              }
+                          },
+                          spl: {
+                              sp: biometricPoints
+                          }
+                      }
+                  },
+                  vsd: {
+                      typecode: 1,
+                      data: ''
+                  }
+              }
+          };
+      };
+      SignaturePad.prototype._inclusionField = function () {
+          var inclusion = 0;
+          inclusion += 32768;
+          inclusion += 16384;
+          inclusion += 256;
+          inclusion += 32;
+          if (this.isTouch()) {
+              inclusion += 64;
+              if (this._whichEvent === 1) {
+                  inclusion += 16;
+                  inclusion += 8;
+              }
+              else {
+                  inclusion += 4;
+                  inclusion += 2;
+              }
+              inclusion += 1;
+          }
+          return inclusion;
+      };
+      SignaturePad.prototype._fetchClientInfo = function () {
+          var _this = this;
+          axios.get('https://idana-development.appspot.com/api/public/info')
+              .then(function (response) {
+              _this._clientInfo = JSON.stringify(response.data);
+          })["catch"](function (error) {
+              _this._clientInfo = JSON.stringify({
+                  error: 'Could not get client info: ' + error.toString()
+              });
+          });
+      };
       SignaturePad.prototype._strokeBegin = function (event) {
           var newPointGroup = {
               color: this.penColor,
@@ -306,12 +471,12 @@
           var y = event.clientY;
           var point = this._createPoint(x, y);
           var lastPointGroup = this._data[this._data.length - 1];
-          var lastPoints = lastPointGroup.points;
+          var lastPoints = lastPointGroup ? lastPointGroup.points : [];
           var lastPoint = lastPoints.length > 0 && lastPoints[lastPoints.length - 1];
           var isLastPointTooClose = lastPoint
               ? point.distanceTo(lastPoint) <= this.minDistance
               : false;
-          var color = lastPointGroup.color;
+          var color = lastPointGroup ? lastPointGroup.color : this.penColor;
           if (!lastPoint || !(lastPoint && isLastPointTooClose)) {
               var curve = this._addPoint(point);
               if (!lastPoint) {
@@ -320,11 +485,40 @@
               else if (curve) {
                   this._drawCurve({ color: color, curve: curve });
               }
-              lastPoints.push({
-                  time: point.time,
+              var d = new Date();
+              if (this._timeLastPoint < 0) {
+                  this._timeLastPoint = d.getTime();
+                  this._time = 0;
+              }
+              else {
+                  this._time = d.getTime() - this._timeLastPoint;
+              }
+              var pt = {
+                  altitude: -1,
+                  azimuth: -1,
+                  pressure: -1,
+                  rotation: -1,
+                  time: point.time - this._timeLastPoint,
                   x: point.x,
-                  y: point.y
-              });
+                  y: point.y,
+                  tiltX: this._whichEvent === 1 ? event.tiltX : -1,
+                  tiltY: this._whichEvent === 1 ? event.tiltY : -1
+              };
+              if (this.isTouch()) {
+                  if (this._whichEvent === 1) {
+                      pt.pressure = event.pressure;
+                      pt.rotation = event.twist;
+                      pt.tiltX = event.tiltX;
+                      pt.tiltY = event.tiltY;
+                  }
+                  else {
+                      pt.pressure = event.force;
+                      pt.rotation = event.rotationAngle;
+                      pt.altitude = event.altitudeAngle;
+                      pt.azimuth = event.azimuthAngle;
+                  }
+              }
+              lastPoints.push(pt);
           }
       };
       SignaturePad.prototype._strokeEnd = function (event) {
@@ -335,9 +529,9 @@
       };
       SignaturePad.prototype._handlePointerEvents = function () {
           this._mouseButtonDown = false;
-          this.canvas.addEventListener('pointerdown', this._handleMouseDown);
-          this.canvas.addEventListener('pointermove', this._handleMouseMove);
-          document.addEventListener('pointerup', this._handleMouseUp);
+          this.canvas.addEventListener('pointerdown', this._handlePointerDown);
+          this.canvas.addEventListener('pointermove', this._handlePointerMove);
+          document.addEventListener('pointerup', this._handlePointerUp);
       };
       SignaturePad.prototype._handleMouseEvents = function () {
           this._mouseButtonDown = false;
@@ -417,7 +611,7 @@
               y += 3 * uu * t * curve.control1.y;
               y += 3 * u * tt * curve.control2.y;
               y += ttt * curve.endPoint.y;
-              var width = curve.startWidth + ttt * widthDelta;
+              var width = Math.min(curve.startWidth + ttt * widthDelta, this.maxWidth);
               this._drawCurveSegment(x, y, width);
           }
           ctx.closePath();
@@ -463,11 +657,8 @@
       SignaturePad.prototype._toSVG = function () {
           var _this = this;
           var pointGroups = this._data;
-          var ratio = Math.max(window.devicePixelRatio || 1, 1);
           var minX = 0;
           var minY = 0;
-          var maxX = this.canvas.width / ratio;
-          var maxY = this.canvas.height / ratio;
           var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
           svg.setAttribute('width', this.canvas.width.toString());
           svg.setAttribute('height', this.canvas.height.toString());
@@ -503,9 +694,9 @@
           var header = '<svg' +
               ' xmlns="http://www.w3.org/2000/svg"' +
               ' xmlns:xlink="http://www.w3.org/1999/xlink"' +
-              (" viewBox=\"" + minX + " " + minY + " " + maxX + " " + maxY + "\"") +
-              (" width=\"" + maxX + "\"") +
-              (" height=\"" + maxY + "\"") +
+              (" viewBox=\"" + minX + " " + minY + " " + this.canvas.width + " " + this.canvas.height + "\"") +
+              (" width=\"" + this.canvas.width + "\"") +
+              (" height=\"" + this.canvas.height + "\"") +
               '>';
           var body = svg.innerHTML;
           if (body === undefined) {

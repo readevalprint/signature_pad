@@ -5,6 +5,9 @@ var undoButton = wrapper.querySelector("[data-action=undo]");
 var savePNGButton = wrapper.querySelector("[data-action=save-png]");
 var saveJPGButton = wrapper.querySelector("[data-action=save-jpg]");
 var saveSVGButton = wrapper.querySelector("[data-action=save-svg]");
+var showDataButton = wrapper.querySelector("[data-action=show-data]");
+var showBiometricDataButton = wrapper.querySelector("[data-action=show-biometric-data]");
+// var showBiometricXMLDataButton = wrapper.querySelector("[data-action=show-biometric-xml-data]");
 var canvas = wrapper.querySelector("canvas");
 var signaturePad = new SignaturePad(canvas, {
   // It's Necessary to use an opaque color when saving image as JPEG;
@@ -58,6 +61,20 @@ function download(dataURL, filename) {
   }
 }
 
+function copyTextAreaToClipboard() {
+  /* Get the text field */
+  var copyText = document.getElementById("last-data");
+
+  /* Select the text field */
+  copyText.select();
+
+  /* Copy the text inside the text field */
+  document.execCommand("copy");
+
+  /* Alert the copied text */
+  // alert("Copied the text: " + copyText.value);
+}
+
 // One could simply use Canvas#toBlob method instead, but it's just to show
 // that it can be done using result of SignaturePad#toDataURL.
 function dataURLToBlob(dataURL) {
@@ -96,6 +113,24 @@ changeColorButton.addEventListener("click", function (event) {
 
   signaturePad.penColor = color;
 });
+
+showDataButton.addEventListener("click", function (event) {
+  console.log(signaturePad.toData());
+  document.getElementById('last-data').value = JSON.stringify(signaturePad.toData());
+  copyTextAreaToClipboard();
+});
+
+showBiometricDataButton.addEventListener("click", function (event) {
+  console.log(signaturePad.toBiometricData());
+  document.getElementById('last-data').value = JSON.stringify(signaturePad.toBiometricData());
+  copyTextAreaToClipboard();
+});
+
+// showBiometricXMLDataButton.addEventListener("click", function (event) {
+//   console.log(signaturePad.toBiometricXML(signaturePad.toBiometricData()));
+//   document.getElementById('last-data').value = signaturePad.toBiometricXML(signaturePad.toBiometricData());
+//   copyTextAreaToClipboard();
+// });
 
 savePNGButton.addEventListener("click", function (event) {
   if (signaturePad.isEmpty()) {
