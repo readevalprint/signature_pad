@@ -4,24 +4,16 @@
  */
 
 (function (global, factory) {
-  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory(require('axios')) :
-  typeof define === 'function' && define.amd ? define(['axios'], factory) :
-  (global.SignaturePad = factory(global.axios));
-}(this, (function (axios) { 'use strict';
-
-  axios = axios && axios.hasOwnProperty('default') ? axios['default'] : axios;
+  typeof exports === 'object' && typeof module !== 'undefined' ? module.exports = factory() :
+  typeof define === 'function' && define.amd ? define(factory) :
+  (global.SignaturePad = factory());
+}(this, (function () { 'use strict';
 
   var Point = (function () {
-      function Point(x, y, time, pressure) {
+      function Point(x, y, time) {
           this.x = x;
           this.y = y;
           this.time = time || Date.now();
-          this.pressure = pressure || -1;
-          this.rotation = 0;
-          this.tiltX = 0;
-          this.tiltY = 0;
-          this.altitude = 0;
-          this.azimuth = 0;
       }
       Point.prototype.distanceTo = function (start) {
           return Math.sqrt(Math.pow(this.x - start.x, 2) + Math.pow(this.y - start.y, 2));
@@ -143,30 +135,13 @@
       };
   }
 
-  var round2Fixed = function (num) {
-      return Math.round(num * 100) / 100;
-  };
-  var pixelMm = function () {
-      var div = document.createElement("div");
-      div.style.height = "1000mm";
-      div.style.width = "1000mm";
-      div.style.top = "-100%";
-      div.style.left = "-100%";
-      div.style.position = "absolute";
-      document.body.appendChild(div);
-      var result = div.offsetHeight;
-      document.body.removeChild(div);
-      return 1 / result * 1000;
-  };
   var SignaturePad = (function () {
       function SignaturePad(canvas, options) {
           if (options === void 0) { options = {}; }
           var _this = this;
           this.canvas = canvas;
           this.options = options;
-          this._angleScale = 1000;
           this._timeScale = 1000;
-          this._pressureScale = 1000;
           this._clientInfo = '';
           this._handlePointerDown = function (event) {
               if (event.which === 1) {
@@ -249,7 +224,6 @@
           this.onEnd = options.onEnd;
           this._ctx = canvas.getContext('2d');
           this.clear();
-          this._fetchClientInfo();
           this.on();
       }
       SignaturePad.prototype.clear = function () {
@@ -348,81 +322,6 @@
       SignaturePad.prototype.toData = function () {
           return this._data;
       };
-      SignaturePad.prototype.toBiometricData = function () {
-          this._pixelMm = pixelMm();
-          var biometricPoints = [];
-          for (var _i = 0, _a = this._data; _i < _a.length; _i++) {
-              var line = _a[_i];
-              for (var _b = 0, _c = line.points; _b < _c.length; _b++) {
-                  var point = _c[_b];
-                  var biometricPoint = {
-                      tc: point.time * this._timeScale / 1000,
-                      ptc: {
-                          cx: round2Fixed(point.x * this._pixelMm),
-                          cy: round2Fixed(point.y * this._pixelMm)
-                      },
-                      fc: Math.round(point.pressure * this._pressureScale),
-                      po: {
-                          tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltX * this._angleScale),
-                          tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltY * this._angleScale),
-                          pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.azimuth * this._angleScale),
-                          pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.altitude * this._angleScale),
-                          pr: Math.round(point.rotation * this._angleScale)
-                      }
-                  };
-                  if (!this.isTouch()) {
-                      delete biometricPoint.fc;
-                      delete biometricPoint.po;
-                  }
-                  biometricPoints.push(biometricPoint);
-              }
-          }
-          return {
-              root: {
-                  v: {
-                      maj: 1,
-                      min: 0
-                  },
-                  rl: {
-                      r: {
-                          dt: this._datetimeStarted,
-                          dev: {
-                              did: {
-                                  org: 259,
-                                  ident: this._clientInfo
-                              },
-                              tec: (this._pointerType === 'pen') ? 'Electromagnetic' : this._pointerType
-                          },
-                          inc: this._inclusionField().toString(16).toUpperCase(),
-                          cdl: {
-                              'sig:PenTipOrientationChannelDescription': {
-                                  scVal: this._angleScale,
-                                  minVal: 0,
-                                  maxVal: 90 * this._angleScale
-                              },
-                              'sig:TChannelDescription': {
-                                  scVal: this._timeScale,
-                                  minVal: 0,
-                                  maxVal: this._time * this._timeScale
-                              },
-                              'sig:FChannelDescription': {
-                                  scVal: this._pressureScale,
-                                  minVal: 0,
-                                  maxVal: this._pressureScale
-                              }
-                          },
-                          spl: {
-                              sp: biometricPoints
-                          }
-                      }
-                  },
-                  vsd: {
-                      typecode: 1,
-                      data: ''
-                  }
-              }
-          };
-      };
       SignaturePad.prototype._inclusionField = function () {
           var inclusion = 0;
           inclusion += 32768;
@@ -442,17 +341,6 @@
               inclusion += 1;
           }
           return inclusion;
-      };
-      SignaturePad.prototype._fetchClientInfo = function () {
-          var _this = this;
-          axios.get('https://idana-development.appspot.com/api/public/info')
-              .then(function (response) {
-              _this._clientInfo = JSON.stringify(response.data);
-          })["catch"](function (error) {
-              _this._clientInfo = JSON.stringify({
-                  error: 'Could not get client info: ' + error.toString()
-              });
-          });
       };
       SignaturePad.prototype._strokeBegin = function (event) {
           var newPointGroup = {
@@ -494,29 +382,12 @@
                   this._time = d.getTime() - this._timeLastPoint;
               }
               var pt = {
-                  altitude: -1,
-                  azimuth: -1,
-                  pressure: -1,
-                  rotation: -1,
                   time: point.time - this._timeLastPoint,
                   x: point.x,
-                  y: point.y,
-                  tiltX: this._whichEvent === 1 ? event.tiltX : -1,
-                  tiltY: this._whichEvent === 1 ? event.tiltY : -1
+                  y: point.y
               };
               if (this.isTouch()) {
-                  if (this._whichEvent === 1) {
-                      pt.pressure = event.pressure;
-                      pt.rotation = event.twist;
-                      pt.tiltX = event.tiltX;
-                      pt.tiltY = event.tiltY;
-                  }
-                  else {
-                      pt.pressure = event.force;
-                      pt.rotation = event.rotationAngle;
-                      pt.altitude = event.altitudeAngle;
-                      pt.azimuth = event.azimuthAngle;
-                  }
+                  if (this._whichEvent === 1) ;
               }
               lastPoints.push(pt);
           }

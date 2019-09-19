@@ -13,7 +13,6 @@ import {Bezier} from './bezier';
 import {IBasicPoint, Point} from './point';
 import {throttle} from './throttle';
 import {IBiometricPoint, IBiometricSignatureRooted} from './biometric';
-import axios from 'axios';
 
 declare global {
   // tslint:disable-next-line:interface-name
@@ -116,9 +115,7 @@ export default class SignaturePad {
   private _timeLastPoint: number; // Time of start
   private _time: number; // Time
   private _datetimeStarted: string;
-  private _angleScale: number = 1000; // Angle scaling value
   private _timeScale: number = 1000; // Time scaling value
-  private _pressureScale: number = 1000; // Pressure scaling value
   private _clientInfo: string = '';
   // private _pointerId: number = 0;
 
@@ -164,7 +161,7 @@ export default class SignaturePad {
     this.clear();
 
     // Fetch client information to include in the biometric signature
-    this._fetchClientInfo();
+    // this._fetchClientInfo();
 
     // Enable mouse and touch event handlers
     this.on();
@@ -285,81 +282,6 @@ export default class SignaturePad {
     return this._data;
   }
 
-  public toBiometricData(): IBiometricSignatureRooted {
-    // Compute only once
-    this._pixelMm = pixelMm();
-    const biometricPoints = [];
-    for (const line of this._data) {
-      for (const point of line.points) {
-        const biometricPoint: IBiometricPoint = {
-          tc: point.time * this._timeScale / 1000,
-          ptc: {
-            cx: round2Fixed(point.x * this._pixelMm),
-            cy: round2Fixed(point.y * this._pixelMm),
-          },
-          fc: Math.round(point.pressure * this._pressureScale),
-          po: {
-            tax: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltX * this._angleScale),
-            tay: (this.isTouch() && this._whichEvent !== 1) ? undefined : Math.round(point.tiltY * this._angleScale),
-            pa: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.azimuth * this._angleScale),
-            pe: (this.isTouch() && this._whichEvent !== 3) ? undefined : Math.round(point.altitude * this._angleScale),
-            pr: Math.round(point.rotation * this._angleScale)
-          }
-        };
-        if (!this.isTouch()) {
-          delete biometricPoint.fc;
-          delete biometricPoint.po;
-        }
-        biometricPoints.push(biometricPoint);
-      }
-    }
-
-    return {
-      root: {
-        v: {
-          maj: 1,
-          min: 0
-        },
-        rl: {
-          r: {
-            dt: this._datetimeStarted,
-            dev: {
-              did: {
-                org: 259,
-                ident: this._clientInfo
-              },
-              tec: (this._pointerType === 'pen')  ? 'Electromagnetic' : this._pointerType,
-            },
-            inc: this._inclusionField().toString(16).toUpperCase(),
-            cdl: {
-              'sig:PenTipOrientationChannelDescription': {
-                scVal: this._angleScale,
-                minVal: 0,
-                maxVal: 90 * this._angleScale
-              },
-              'sig:TChannelDescription': {
-                scVal: this._timeScale,
-                minVal: 0,
-                maxVal: this._time * this._timeScale
-              },
-              'sig:FChannelDescription': {
-                scVal: this._pressureScale,
-                minVal: 0,
-                maxVal: this._pressureScale
-              }
-            },
-            spl: {
-              sp: biometricPoints
-            }
-          }
-        },
-        vsd: {
-          typecode: 1,
-          data: ''
-        }
-      }
-    };
-  }
 
   // public toBiometricXML(signatureData: IBiometricSignatureRooted) {
   //   let signatureDataString = JSON.stringify(signatureData);
@@ -397,18 +319,6 @@ export default class SignaturePad {
     return inclusion;
   }
 
-  private _fetchClientInfo(): void {
-    axios.get('https://idana-development.appspot.com/api/public/info')
-      .then((response) => {
-        this._clientInfo = JSON.stringify(response.data)
-      })
-      .catch((error) => {
-        // handle error
-        this._clientInfo = JSON.stringify({
-          error: 'Could not get client info: ' + error.toString()
-        });
-      })
-  }
 
   // Event handlers
   private _handlePointerDown = (event: PointerEvent): void => {
@@ -532,28 +442,14 @@ export default class SignaturePad {
       }
 
       const pt = {
-        altitude: -1,
-        azimuth: -1,
-        pressure: -1,
-        rotation: -1,
         time: point.time - this._timeLastPoint,
         x: point.x,
         y: point.y,
-        tiltX: this._whichEvent === 1 ? event.tiltX : -1,
-        tiltY: this._whichEvent === 1 ? event.tiltY : -1
       };
 
       if (this.isTouch()) {
         if (this._whichEvent === 1) {
-          pt.pressure = event.pressure;
-          pt.rotation = event.twist;
-          pt.tiltX = event.tiltX;
-          pt.tiltY = event.tiltY;
         } else {
-          pt.pressure = event.force;
-          pt.rotation = event.rotationAngle;
-          pt.altitude = event.altitudeAngle;
-          pt.azimuth = event.azimuthAngle;
         }
       }
       lastPoints.push(pt);
