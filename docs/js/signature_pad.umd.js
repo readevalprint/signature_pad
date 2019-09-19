@@ -367,13 +367,14 @@
           var color = lastPointGroup ? lastPointGroup.color : this.penColor;
           if (!lastPoint || !(lastPoint && isLastPointTooClose)) {
               var curve = this._addPoint(point);
+              var d = new Date();
               if (!lastPoint) {
+                  this._timeLastPoint = d.getTime();
                   this._drawDot({ color: color, point: point });
               }
               else if (curve) {
                   this._drawCurve({ color: color, curve: curve });
               }
-              var d = new Date();
               if (this._timeLastPoint < 0) {
                   this._timeLastPoint = d.getTime();
                   this._time = 0;

@@ -427,13 +427,14 @@ export default class SignaturePad {
     if (!lastPoint || !(lastPoint && isLastPointTooClose)) {
       const curve = this._addPoint(point);
 
+      const d = new Date();
       if (!lastPoint) {
+        this._timeLastPoint = d.getTime();
         this._drawDot({color, point});
       } else if (curve) {
         this._drawCurve({color, curve});
       }
 
-      const d = new Date();
       if (this._timeLastPoint < 0) {
         this._timeLastPoint = d.getTime();
         this._time = 0;
